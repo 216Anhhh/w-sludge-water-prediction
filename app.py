@@ -67,6 +67,36 @@ if 'model_trained' not in st.session_state:
 if 'theme' not in st.session_state:
     st.session_state.theme = 'dark'
 
+# ===== 图表状态（每个独立保存） =====
+if 'show_ts' not in st.session_state:
+    st.session_state.show_ts = False
+if 'show_importance' not in st.session_state:
+    st.session_state.show_importance = False
+if 'show_heatmap' not in st.session_state:
+    st.session_state.show_heatmap = False
+if 'show_scatter' not in st.session_state:
+    st.session_state.show_scatter = False
+if 'show_compare' not in st.session_state:
+    st.session_state.show_compare = False
+if 'show_violin' not in st.session_state:
+    st.session_state.show_violin = False
+if 'show_shap' not in st.session_state:
+    st.session_state.show_shap = False
+
+# ===== 保存图表参数 =====
+if 'ts_target' not in st.session_state:
+    st.session_state.ts_target = None
+if 'imp_model' not in st.session_state:
+    st.session_state.imp_model = None
+if 'imp_target' not in st.session_state:
+    st.session_state.imp_target = None
+if 'scatter_target' not in st.session_state:
+    st.session_state.scatter_target = None
+if 'violin_target' not in st.session_state:
+    st.session_state.violin_target = None
+if 'shap_target' not in st.session_state:
+    st.session_state.shap_target = None
+
 # ============ 主题配色 ============
 def get_theme_colors(theme):
     if theme == 'dark':
@@ -379,6 +409,7 @@ def train_models(X_data, y_data):
             y_pred = model.predict(X_test)
             results[y_col][name] = {
                 'r2': r2_score(y_test, y_pred),
+                'mse': mean_squared_error(y_test, y_pred),
                 'rmse': np.sqrt(mean_squared_error(y_test, y_pred)),
                 'mae': mean_absolute_error(y_test, y_pred)
             }
@@ -585,7 +616,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📉 模型评价", "🔍 SHAP解释"
 ])
 
-# ===== Tab 1: 预测分析 =====
+# ===== Tab 1: 预测分析（自动显示） =====
 with tab1:
     st.markdown("### 🎯 预测结果详情")
     if st.session_state.predicted and st.session_state.pred_values:
@@ -674,7 +705,7 @@ with tab1:
     else:
         st.info("💡 请先在左侧侧边栏输入参数，然后点击 '开始预测' 按钮")
 
-# ===== Tab 2: 时间序列 =====
+# ===== Tab 2: 时间序列（独立状态） =====
 with tab2:
     st.markdown("### 📈 历史趋势分析")
     if date_col:
@@ -684,7 +715,21 @@ with tab2:
             format_func=lambda x: y_names_cn.get(x, x) if x in y_names_cn else x_names_cn.get(x, x),
             key="time_series"
         )
-        if st.button("📊 生成时间序列图", key="gen_timeseries"):
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            if st.button("📊 生成时间序列图", key="gen_ts", use_container_width=True):
+                st.session_state.show_ts = True
+                st.session_state.ts_target = time_target
+                st.rerun()
+        with col2:
+            if st.button("🗑️ 清除", key="clear_ts", use_container_width=True):
+                st.session_state.show_ts = False
+                st.session_state.ts_target = None
+                st.rerun()
+        
+        if st.session_state.show_ts and st.session_state.ts_target:
+            time_target = st.session_state.ts_target
             if time_target:
                 if time_target in y_data.columns:
                     values = y_data[time_target]
@@ -695,7 +740,7 @@ with tab2:
                     title = x_names_cn.get(time_target, time_target)
                     color = '#f0883e'
                 
-                ma_window = st.slider("移动平均窗口", min_value=1, max_value=10, value=3, key="ma_window")
+                ma_window = st.slider("移动平均窗口", min_value=1, max_value=10, value=3, key="ma_window_ts")
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(
                     x=date_data, y=values,
@@ -729,7 +774,7 @@ with tab2:
     else:
         st.warning("⚠️ 数据中未找到日期列")
 
-# ===== Tab 3: 特征重要性 =====
+# ===== Tab 3: 特征重要性（独立状态） =====
 with tab3:
     st.markdown("### 📊 特征重要性分析")
     
@@ -739,38 +784,62 @@ with tab3:
         model_type = st.radio("选择模型", ['XGBoost', '随机森林', 'Lasso'], horizontal=True, key="importance")
         target = st.selectbox("选择目标变量", available_y, format_func=lambda x: y_names_cn.get(x, x), key="importance_target")
         
-        if st.button("📊 生成特征重要性图", key="gen_importance"):
-            if target:
-                model_key = {'XGBoost': 'xgb', '随机森林': 'rf', 'Lasso': 'lasso'}[model_type]
-                if model_key == 'lasso':
-                    importance = np.abs(st.session_state.models[target]['lasso'].coef_)
-                else:
-                    importance = st.session_state.models[target][model_key].feature_importances_
-                
-                sorted_idx = np.argsort(importance)[::-1]
-                sorted_names = [x_names_en.get(available_X[i], available_X[i]) for i in sorted_idx]
-                sorted_values = importance[sorted_idx]
-                
-                fig, ax = plt.subplots(figsize=(10, 4))
-                # 使用主题颜色
-                bar_color = '#58a6ff' if st.session_state.theme == 'dark' else '#1a5276'
-                text_color = colors['plot_textcolor']
-                
-                bars = ax.barh(sorted_names, sorted_values, color=bar_color)
-                ax.set_xlabel('Feature Importance', fontsize=11, fontweight='bold', color=text_color)
-                ax.set_title(f'{model_type} - {y_names_en.get(target, target)} Feature Importance', fontsize=13, fontweight='bold', color=text_color)
-                ax.invert_yaxis()
-                ax.set_facecolor(colors['plot_facecolor'])
-                fig.patch.set_facecolor(colors['plot_facecolor'])
-                for i, v in enumerate(sorted_values):
-                    ax.text(v + 0.005, i, f'{v:.3f}', va='center', color=text_color, fontsize=9, fontweight='bold')
-                plt.tight_layout()
-                st.pyplot(fig)
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            if st.button("📊 生成特征重要性图", key="gen_imp", use_container_width=True):
+                st.session_state.show_importance = True
+                st.session_state.imp_model = model_type
+                st.session_state.imp_target = target
+                st.rerun()
+        with col2:
+            if st.button("🗑️ 清除", key="clear_imp", use_container_width=True):
+                st.session_state.show_importance = False
+                st.session_state.imp_model = None
+                st.session_state.imp_target = None
+                st.rerun()
+        
+        if st.session_state.show_importance and st.session_state.imp_target:
+            model_type = st.session_state.imp_model
+            target = st.session_state.imp_target
+            model_key = {'XGBoost': 'xgb', '随机森林': 'rf', 'Lasso': 'lasso'}[model_type]
+            if model_key == 'lasso':
+                importance = np.abs(st.session_state.models[target]['lasso'].coef_)
+            else:
+                importance = st.session_state.models[target][model_key].feature_importances_
+            
+            sorted_idx = np.argsort(importance)[::-1]
+            sorted_names = [x_names_en.get(available_X[i], available_X[i]) for i in sorted_idx]
+            sorted_values = importance[sorted_idx]
+            
+            fig, ax = plt.subplots(figsize=(10, 4))
+            bar_color = '#58a6ff' if st.session_state.theme == 'dark' else '#1a5276'
+            text_color = colors['plot_textcolor']
+            
+            bars = ax.barh(sorted_names, sorted_values, color=bar_color)
+            ax.set_xlabel('Feature Importance', fontsize=11, fontweight='bold', color=text_color)
+            ax.set_title(f'{model_type} - {y_names_en.get(target, target)} Feature Importance', fontsize=13, fontweight='bold', color=text_color)
+            ax.invert_yaxis()
+            ax.set_facecolor(colors['plot_facecolor'])
+            fig.patch.set_facecolor(colors['plot_facecolor'])
+            for i, v in enumerate(sorted_values):
+                ax.text(v + 0.005, i, f'{v:.3f}', va='center', color=text_color, fontsize=9, fontweight='bold')
+            plt.tight_layout()
+            st.pyplot(fig)
         
         st.markdown("---")
         st.markdown("### 🔥 特征相关性热力图")
         
-        if st.button("📊 生成热力图", key="gen_heatmap"):
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            if st.button("📊 生成热力图", key="gen_heat", use_container_width=True):
+                st.session_state.show_heatmap = True
+                st.rerun()
+        with col2:
+            if st.button("🗑️ 清除", key="clear_heat", use_container_width=True):
+                st.session_state.show_heatmap = False
+                st.rerun()
+        
+        if st.session_state.show_heatmap:
             corr_data = pd.concat([X_data, y_data], axis=1)
             corr_matrix = corr_data.corr()
             rename_map = {**x_names_en, **y_names_en}
@@ -787,7 +856,7 @@ with tab3:
             plt.tight_layout()
             st.pyplot(fig)
 
-# ===== Tab 4: 模型评价 =====
+# ===== Tab 4: 模型评价（独立状态） =====
 with tab4:
     st.markdown("### 📉 真实值 vs 预测值散点图")
     
@@ -796,77 +865,104 @@ with tab4:
     else:
         target_eval = st.selectbox("选择目标变量", available_y, format_func=lambda x: y_names_cn.get(x, x), key='eval')
         
-        if st.button("📊 生成散点图", key="gen_scatter"):
-            if target_eval:
-                model = st.session_state.models[target_eval]['xgb']
-                y_test = st.session_state.models[target_eval]['y_test']
-                y_pred = model.predict(st.session_state.models[target_eval]['X_test'])
-                r2 = r2_score(y_test, y_pred)
-                rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-                mae = mean_absolute_error(y_test, y_pred)
-                
-                fig, ax = plt.subplots(figsize=(8, 5))
-                text_color = colors['plot_textcolor']
-                ax.scatter(y_test, y_pred, alpha=0.6, color='#58a6ff', s=50)
-                ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2, label='Ideal')
-                ax.set_xlabel('True Value', fontsize=11, fontweight='bold', color=text_color)
-                ax.set_ylabel('Predicted Value', fontsize=11, fontweight='bold', color=text_color)
-                ax.set_title(f'{y_names_en.get(target_eval, target_eval)} - R² = {r2:.4f}', fontsize=13, fontweight='bold', color=text_color)
-                ax.legend(loc='upper left', facecolor=colors['plot_facecolor'], edgecolor=colors['border'], labelcolor=text_color)
-                ax.set_facecolor(colors['plot_facecolor'])
-                fig.patch.set_facecolor(colors['plot_facecolor'])
-                plt.tight_layout()
-                st.pyplot(fig)
-                
-                st.markdown("---")
-                st.markdown("### 📊 模型评价指标")
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("R² 分数", f"{r2:.4f}", help="越接近1越好")
-                with col2:
-                    st.metric("RMSE", f"{rmse:.4f}", help="均方根误差，越小越好")
-                with col3:
-                    st.metric("MAE", f"{mae:.4f}", help="平均绝对误差，越小越好")
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            if st.button("📊 生成散点图", key="gen_scatter", use_container_width=True):
+                st.session_state.show_scatter = True
+                st.session_state.scatter_target = target_eval
+                st.rerun()
+        with col2:
+            if st.button("🗑️ 清除", key="clear_scatter", use_container_width=True):
+                st.session_state.show_scatter = False
+                st.session_state.scatter_target = None
+                st.rerun()
+        
+        if st.session_state.show_scatter and st.session_state.scatter_target:
+            target_eval = st.session_state.scatter_target
+            model = st.session_state.models[target_eval]['xgb']
+            y_test = st.session_state.models[target_eval]['y_test']
+            y_pred = model.predict(st.session_state.models[target_eval]['X_test'])
+            r2 = r2_score(y_test, y_pred)
+            mse = mean_squared_error(y_test, y_pred)
+            rmse = np.sqrt(mse)
+            mae = mean_absolute_error(y_test, y_pred)
+            
+            fig, ax = plt.subplots(figsize=(8, 5))
+            text_color = colors['plot_textcolor']
+            ax.scatter(y_test, y_pred, alpha=0.6, color='#58a6ff', s=50)
+            ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2, label='Ideal')
+            ax.set_xlabel('True Value', fontsize=11, fontweight='bold', color=text_color)
+            ax.set_ylabel('Predicted Value', fontsize=11, fontweight='bold', color=text_color)
+            ax.set_title(f'{y_names_en.get(target_eval, target_eval)} - R² = {r2:.4f}', fontsize=13, fontweight='bold', color=text_color)
+            ax.legend(loc='upper left', facecolor=colors['plot_facecolor'], edgecolor=colors['border'], labelcolor=text_color)
+            ax.set_facecolor(colors['plot_facecolor'])
+            fig.patch.set_facecolor(colors['plot_facecolor'])
+            plt.tight_layout()
+            st.pyplot(fig)
+            
+            st.markdown("---")
+            st.markdown("### 📊 模型评价指标")
+            st.markdown("R²、MSE、RMSE、MAE 综合评价模型性能")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("R² 分数", f"{r2:.4f}", help="越接近1越好")
+            with col2:
+                st.metric("MSE", f"{mse:.4f}", help="均方误差，越小越好")
+            with col3:
+                st.metric("RMSE", f"{rmse:.4f}", help="均方根误差，越小越好")
+            with col4:
+                st.metric("MAE", f"{mae:.4f}", help="平均绝对误差，越小越好")
         
         st.markdown("---")
         st.markdown("### 📊 各模型性能对比")
         
-        if st.button("📊 生成模型对比图", key="gen_compare"):
-            if target_eval:
-                model_names = ['Linear', 'Lasso', 'RF', 'XGB']
-                r2_values = [st.session_state.results[target_eval]['lr']['r2'], 
-                             st.session_state.results[target_eval]['lasso']['r2'],
-                             st.session_state.results[target_eval]['rf']['r2'], 
-                             st.session_state.results[target_eval]['xgb']['r2']]
-                rmse_values = [st.session_state.results[target_eval]['lr']['rmse'], 
-                               st.session_state.results[target_eval]['lasso']['rmse'],
-                               st.session_state.results[target_eval]['rf']['rmse'], 
-                               st.session_state.results[target_eval]['xgb']['rmse']]
-                
-                fig2, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-                text_color = colors['plot_textcolor']
-                
-                bars1 = ax1.bar(model_names, r2_values, color=['#58a6ff', '#f0883e', '#3fb950', '#f85149'])
-                ax1.set_ylabel('R² Score', fontsize=11, color=text_color)
-                ax1.set_title('R² Comparison', fontsize=13, fontweight='bold', color=text_color)
-                ax1.set_ylim(0, 1.05)
-                ax1.set_facecolor(colors['plot_facecolor'])
-                fig2.patch.set_facecolor(colors['plot_facecolor'])
-                for bar, val in zip(bars1, r2_values):
-                    ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
-                            f'{val:.3f}', ha='center', va='bottom', color=text_color, fontsize=9)
-                
-                bars2 = ax2.bar(model_names, rmse_values, color=['#58a6ff', '#f0883e', '#3fb950', '#f85149'])
-                ax2.set_ylabel('RMSE', fontsize=11, color=text_color)
-                ax2.set_title('RMSE Comparison', fontsize=13, fontweight='bold', color=text_color)
-                ax2.set_facecolor(colors['plot_facecolor'])
-                for bar, val in zip(bars2, rmse_values):
-                    ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
-                            f'{val:.3f}', ha='center', va='bottom', color=text_color, fontsize=9)
-                
-                plt.tight_layout()
-                st.pyplot(fig2)
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            if st.button("📊 生成模型对比图", key="gen_compare", use_container_width=True):
+                st.session_state.show_compare = True
+                st.session_state.scatter_target = target_eval
+                st.rerun()
+        with col2:
+            if st.button("🗑️ 清除", key="clear_compare", use_container_width=True):
+                st.session_state.show_compare = False
+                st.rerun()
+        
+        if st.session_state.show_compare and st.session_state.scatter_target:
+            target_eval = st.session_state.scatter_target
+            model_names = ['Linear', 'Lasso', 'RF', 'XGB']
+            r2_values = [st.session_state.results[target_eval]['lr']['r2'], 
+                         st.session_state.results[target_eval]['lasso']['r2'],
+                         st.session_state.results[target_eval]['rf']['r2'], 
+                         st.session_state.results[target_eval]['xgb']['r2']]
+            rmse_values = [st.session_state.results[target_eval]['lr']['rmse'], 
+                           st.session_state.results[target_eval]['lasso']['rmse'],
+                           st.session_state.results[target_eval]['rf']['rmse'], 
+                           st.session_state.results[target_eval]['xgb']['rmse']]
+            
+            fig2, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+            text_color = colors['plot_textcolor']
+            
+            bars1 = ax1.bar(model_names, r2_values, color=['#58a6ff', '#f0883e', '#3fb950', '#f85149'])
+            ax1.set_ylabel('R² Score', fontsize=11, color=text_color)
+            ax1.set_title('R² Comparison', fontsize=13, fontweight='bold', color=text_color)
+            ax1.set_ylim(0, 1.05)
+            ax1.set_facecolor(colors['plot_facecolor'])
+            fig2.patch.set_facecolor(colors['plot_facecolor'])
+            for bar, val in zip(bars1, r2_values):
+                ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                        f'{val:.3f}', ha='center', va='bottom', color=text_color, fontsize=9)
+            
+            bars2 = ax2.bar(model_names, rmse_values, color=['#58a6ff', '#f0883e', '#3fb950', '#f85149'])
+            ax2.set_ylabel('RMSE', fontsize=11, color=text_color)
+            ax2.set_title('RMSE Comparison', fontsize=13, fontweight='bold', color=text_color)
+            ax2.set_facecolor(colors['plot_facecolor'])
+            for bar, val in zip(bars2, rmse_values):
+                ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                        f'{val:.3f}', ha='center', va='bottom', color=text_color, fontsize=9)
+            
+            plt.tight_layout()
+            st.pyplot(fig2)
         
         st.markdown("---")
         st.markdown("### 🎻 小提琴图 - 数据分布")
@@ -875,33 +971,45 @@ with tab4:
                                     format_func=lambda x: y_names_cn.get(x, x) if x in y_names_cn else x_names_cn.get(x, x),
                                     key='violin')
         
-        if st.button("📊 生成小提琴图", key="gen_violin"):
-            if target_violin:
-                fig, ax = plt.subplots(figsize=(10, 4))
-                if target_violin in y_data.columns:
-                    data = y_data[target_violin]
-                    title = y_names_en.get(target_violin, target_violin)
-                else:
-                    data = X_data[target_violin]
-                    title = x_names_en.get(target_violin, target_violin)
-                
-                parts = ax.violinplot(data, positions=[1], showmeans=True, showmedians=True)
-                for pc in parts['bodies']:
-                    pc.set_facecolor('#58a6ff')
-                    pc.set_alpha(0.7)
-                
-                text_color = colors['plot_textcolor']
-                ax.set_title(f'{title} Violin Plot', fontsize=13, fontweight='bold', color=text_color)
-                ax.set_ylabel(title, fontsize=11, color=text_color)
-                ax.set_xticks([1])
-                ax.set_xticklabels([title], color=text_color)
-                ax.grid(True, alpha=0.2)
-                ax.set_facecolor(colors['plot_facecolor'])
-                fig.patch.set_facecolor(colors['plot_facecolor'])
-                plt.tight_layout()
-                st.pyplot(fig)
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            if st.button("📊 生成小提琴图", key="gen_violin", use_container_width=True):
+                st.session_state.show_violin = True
+                st.session_state.violin_target = target_violin
+                st.rerun()
+        with col2:
+            if st.button("🗑️ 清除", key="clear_violin", use_container_width=True):
+                st.session_state.show_violin = False
+                st.session_state.violin_target = None
+                st.rerun()
+        
+        if st.session_state.show_violin and st.session_state.violin_target:
+            target_violin = st.session_state.violin_target
+            fig, ax = plt.subplots(figsize=(10, 4))
+            if target_violin in y_data.columns:
+                data = y_data[target_violin]
+                title = y_names_en.get(target_violin, target_violin)
+            else:
+                data = X_data[target_violin]
+                title = x_names_en.get(target_violin, target_violin)
+            
+            parts = ax.violinplot(data, positions=[1], showmeans=True, showmedians=True)
+            for pc in parts['bodies']:
+                pc.set_facecolor('#58a6ff')
+                pc.set_alpha(0.7)
+            
+            text_color = colors['plot_textcolor']
+            ax.set_title(f'{title} Violin Plot', fontsize=13, fontweight='bold', color=text_color)
+            ax.set_ylabel(title, fontsize=11, color=text_color)
+            ax.set_xticks([1])
+            ax.set_xticklabels([title], color=text_color)
+            ax.grid(True, alpha=0.2)
+            ax.set_facecolor(colors['plot_facecolor'])
+            fig.patch.set_facecolor(colors['plot_facecolor'])
+            plt.tight_layout()
+            st.pyplot(fig)
 
-# ===== Tab 5: SHAP解释 =====
+# ===== Tab 5: SHAP解释（独立状态） =====
 with tab5:
     st.markdown("### 🔍 SHAP 模型解释")
     st.markdown("SHAP值解释每个特征对预测结果的贡献")
@@ -911,7 +1019,20 @@ with tab5:
     else:
         shap_target = st.selectbox("选择目标变量", available_y, format_func=lambda x: y_names_cn.get(x, x), key='shap')
         
-        if st.button("🎯 生成 SHAP 解释", key="shap_btn"):
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            if st.button("🎯 生成 SHAP 解释", key="gen_shap", use_container_width=True):
+                st.session_state.show_shap = True
+                st.session_state.shap_target = shap_target
+                st.rerun()
+        with col2:
+            if st.button("🗑️ 清除", key="clear_shap", use_container_width=True):
+                st.session_state.show_shap = False
+                st.session_state.shap_target = None
+                st.rerun()
+        
+        if st.session_state.show_shap and st.session_state.shap_target:
+            shap_target = st.session_state.shap_target
             with st.spinner("⏳ 计算SHAP值中..."):
                 try:
                     model = st.session_state.models[shap_target]['xgb']
