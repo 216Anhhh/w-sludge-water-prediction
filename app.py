@@ -8,29 +8,10 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import os
-import warnings
 import io
+import warnings
 warnings.filterwarnings('ignore')
 
-# ===== 中文字体配置 =====
-from matplotlib import font_manager
-
-chinese_fonts = ['SimHei', 'Microsoft YaHei', 'SimSun', 'STHeiti', 'Heiti SC']
-font_set = False
-for font_name in chinese_fonts:
-    try:
-        plt.rcParams['font.sans-serif'] = [font_name]
-        plt.rcParams['axes.unicode_minus'] = False
-        font_set = True
-        break
-    except:
-        continue
-
-if not font_set:
-    plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial']
-
-# ============================
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression, Lasso
@@ -40,624 +21,169 @@ import xgboost as xgb
 import plotly.graph_objects as go
 import shap
 
-# Page config
-st.set_page_config(
-    page_title="污水处理智能分析平台",
-    page_icon="💧",
-    layout="wide"
-)
+# ============ 页面配置 ============
+st.set_page_config(page_title="污水处理智能分析平台", page_icon="💧", layout="wide")
 
-# ============ 初始化session_state ============
-if 'df_loaded' not in st.session_state:
-    st.session_state.df_loaded = None
-if 'data_source' not in st.session_state:
-    st.session_state.data_source = 'default'
-if 'predicted' not in st.session_state:
-    st.session_state.predicted = False
-if 'pred_values' not in st.session_state:
-    st.session_state.pred_values = {}
-if 'input_values' not in st.session_state:
-    st.session_state.input_values = {}
-if 'models' not in st.session_state:
-    st.session_state.models = None
-if 'results' not in st.session_state:
-    st.session_state.results = None
-if 'model_trained' not in st.session_state:
-    st.session_state.model_trained = False
-if 'theme' not in st.session_state:
-    st.session_state.theme = 'dark'
+# ============ 初始化状态 ============
+for key in ['models', 'results', 'model_trained', 'predicted', 'pred_values', 'input_values', 'theme']:
+    if key not in st.session_state:
+        if key == 'theme':
+            st.session_state[key] = 'dark'
+        elif key in ['model_trained', 'predicted']:
+            st.session_state[key] = False
+        else:
+            st.session_state[key] = None if key in ['models', 'results', 'input_values'] else {}
 
-# ===== 图表状态（每个独立保存） =====
-if 'show_ts' not in st.session_state:
-    st.session_state.show_ts = False
-if 'show_importance' not in st.session_state:
-    st.session_state.show_importance = False
-if 'show_heatmap' not in st.session_state:
-    st.session_state.show_heatmap = False
-if 'show_scatter' not in st.session_state:
-    st.session_state.show_scatter = False
-if 'show_compare' not in st.session_state:
-    st.session_state.show_compare = False
-if 'show_violin' not in st.session_state:
-    st.session_state.show_violin = False
-if 'show_shap' not in st.session_state:
-    st.session_state.show_shap = False
-
-# ===== 保存图表参数 =====
-if 'ts_target' not in st.session_state:
-    st.session_state.ts_target = None
-if 'imp_model' not in st.session_state:
-    st.session_state.imp_model = None
-if 'imp_target' not in st.session_state:
-    st.session_state.imp_target = None
-if 'scatter_target' not in st.session_state:
-    st.session_state.scatter_target = None
-if 'violin_target' not in st.session_state:
-    st.session_state.violin_target = None
-if 'shap_target' not in st.session_state:
-    st.session_state.shap_target = None
+# 图表状态
+chart_keys = ['show_ts', 'show_imp', 'show_heat', 'show_scatter', 'show_compare', 'show_violin', 'show_shap']
+for key in chart_keys:
+    if key not in st.session_state:
+        st.session_state[key] = False
 
 # ============ 主题配色 ============
-def get_theme_colors(theme):
+def get_colors(theme):
     if theme == 'dark':
-        return {
-            'bg': '#0e1117', 'bg2': '#0d1117', 'sidebar_bg': '#0d1117',
-            'text': '#f0f6fc', 'text_secondary': '#8b949e', 'border': '#30363d',
-            'primary': '#58a6ff', 'success': '#3fb950', 'warning': '#d29922', 'danger': '#f85149',
-            'card_bg': '#161b22', 'plot_bg': '#0d1117', 'plot_face': '#0d1117',
-            'button_bg': '#238636', 'button_hover': '#2ea043', 'button_text': '#ffffff',
-            'tab_bg': '#161b22', 'tab_active': '#238636', 'tab_text': '#8b949e', 'tab_active_text': '#ffffff',
-            'text_color': '#ffffff', 'input_bg': '#1a1a2e', 'input_text': '#f0f6fc',
-            'select_bg': '#1a1a2e', 'select_text': '#f0f6fc',
-            'plot_facecolor': '#0d1117', 'plot_textcolor': 'white',
-        }
+        return {'face': '#0d1117', 'text': 'white', 'bar': '#58a6ff', 'bg': '#0e1117'}
     else:
-        return {
-            'bg': '#f5f7fa', 'bg2': '#ffffff', 'sidebar_bg': '#e8ecf1',
-            'text': '#1a1a2e', 'text_secondary': '#3a4a5a', 'border': '#d0d7de',
-            'primary': '#1a5276', 'success': '#1a8a4a', 'warning': '#b87a0a', 'danger': '#b02a37',
-            'card_bg': '#ffffff', 'plot_bg': '#ffffff', 'plot_face': '#ffffff',
-            'button_bg': '#e8d5b8', 'button_hover': '#dcc4a0', 'button_text': '#1a1a2e',
-            'tab_bg': '#ffffff', 'tab_active': '#b8d4e3', 'tab_text': '#4a5a6a', 'tab_active_text': '#1a1a2e',
-            'text_color': '#1a1a2e', 'input_bg': '#f0f2f6', 'input_text': '#1a1a2e',
-            'select_bg': '#ffffff', 'select_text': '#1a1a2e',
-            'plot_facecolor': '#ffffff', 'plot_textcolor': '#1a1a2e',
-        }
+        return {'face': '#ffffff', 'text': '#1a1a2e', 'bar': '#1a5276', 'bg': '#f5f7fa'}
 
-colors = get_theme_colors(st.session_state.theme)
+colors = get_colors(st.session_state.theme)
 
-# ============ 更新matplotlib颜色 ============
-def update_matplotlib_theme(theme, colors):
-    if theme == 'dark':
-        plt.rcParams['text.color'] = 'white'
-        plt.rcParams['axes.labelcolor'] = 'white'
-        plt.rcParams['xtick.color'] = 'white'
-        plt.rcParams['ytick.color'] = 'white'
-        plt.rcParams['axes.edgecolor'] = '#30363d'
-        plt.rcParams['figure.facecolor'] = '#0d1117'
-        plt.rcParams['axes.facecolor'] = '#0d1117'
-    else:
-        plt.rcParams['text.color'] = '#1a1a2e'
-        plt.rcParams['axes.labelcolor'] = '#1a1a2e'
-        plt.rcParams['xtick.color'] = '#1a1a2e'
-        plt.rcParams['ytick.color'] = '#1a1a2e'
-        plt.rcParams['axes.edgecolor'] = '#d0d7de'
-        plt.rcParams['figure.facecolor'] = '#ffffff'
-        plt.rcParams['axes.facecolor'] = '#ffffff'
-
-update_matplotlib_theme(st.session_state.theme, colors)
+# 设置matplotlib
+plt.rcParams['text.color'] = colors['text']
+plt.rcParams['axes.labelcolor'] = colors['text']
+plt.rcParams['xtick.color'] = colors['text']
+plt.rcParams['ytick.color'] = colors['text']
+plt.rcParams['figure.facecolor'] = colors['face']
+plt.rcParams['axes.facecolor'] = colors['face']
 
 # ============ CSS ============
-def get_css(colors, theme):
-    light_overrides = ""
-    if theme == 'light':
-        light_overrides = """
-        .stMarkdown, .stMarkdown p, .stMarkdown div, .stMarkdown span,
-        .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4,
-        .stMarkdown label, .stMarkdown .label, .stMarkdown .value,
-        .result-card .label, .result-card .value,
-        .metric-card .label, .metric-card .value, .metric-card .sub,
-        div, p, span, label { color: #1a1a2e !important; }
-        .result-card, .result-card * { color: #1a1a2e !important; }
-        .metric-card, .metric-card * { color: #1a1a2e !important; }
-        .status-normal { color: #1a8a4a !important; font-weight: 700; }
-        .status-warning { color: #b87a0a !important; font-weight: 700; }
-        .status-danger { color: #b02a37 !important; font-weight: 700; }
-        section[data-testid="stSidebar"] .stMarkdown,
-        section[data-testid="stSidebar"] .stMarkdown p,
-        section[data-testid="stSidebar"] h1, section[data-testid="stSidebar"] h2,
-        section[data-testid="stSidebar"] h3, section[data-testid="stSidebar"] h4 {
-            color: #1a1a2e !important;
-        }
-        .stSelectbox div[data-baseweb="select"] div {
-            background-color: #ffffff !important;
-            color: #1a1a2e !important;
-        }
-        .stSelectbox ul { background-color: #ffffff !important; }
-        .stSelectbox li { color: #1a1a2e !important; background-color: #ffffff !important; }
-        .stSelectbox li:hover { background-color: #e8ecf1 !important; }
-        .stNumberInput input, .stTextInput input {
-            background-color: #f0f2f6 !important;
-            color: #1a1a2e !important;
-        }
-        """
-    
-    if theme == 'dark':
-        button_css = """
-        .stButton button {
-            background: #238636; color: #ffffff; font-weight: 700; border: none;
-            border-radius: 8px; padding: 0.6rem 2rem; width: 100%;
-            transition: all 0.3s ease; font-size: 1rem;
-        }
-        .stButton button:hover {
-            background: #2ea043; transform: translateY(-2px);
-            box-shadow: 0 4px 16px rgba(35, 134, 54, 0.4);
-        }
-        """
-    else:
-        button_css = """
-        .stButton button {
-            background: #e8d5b8; color: #1a1a2e !important; font-weight: 700;
-            border: 2px solid #d4a574; border-radius: 8px; padding: 0.6rem 2rem;
-            width: 100%; transition: all 0.3s ease; font-size: 1rem;
-        }
-        .stButton button:hover {
-            background: #dcc4a0; transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(212, 165, 116, 0.4);
-        }
-        """
-    
-    return f"""
-    <style>
-    .stApp {{ background-color: {colors['bg']}; }}
-    section[data-testid="stSidebar"] {{
-        background-color: {colors['sidebar_bg']} !important;
-        border-right: 1px solid {colors['border']} !important;
-    }}
-    section[data-testid="stSidebar"] .stMarkdown {{ color: {colors['text']} !important; }}
-    section[data-testid="stSidebar"] .stMarkdown p {{ color: {colors['text']} !important; }}
-    section[data-testid="stSidebar"] h1, section[data-testid="stSidebar"] h2,
-    section[data-testid="stSidebar"] h3, section[data-testid="stSidebar"] h4 {{
-        color: {colors['text']} !important;
-    }}
-    section[data-testid="stSidebar"] .stNumberInput input,
-    section[data-testid="stSidebar"] .stTextInput input,
-    section[data-testid="stSidebar"] .stSelectbox select,
-    section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] {{
-        background-color: {colors['input_bg']} !important;
-        color: {colors['input_text']} !important;
-        border: 1px solid {colors['border']} !important;
-    }}
-    section[data-testid="stSidebar"] .stNumberInput label,
-    section[data-testid="stSidebar"] .stTextInput label,
-    section[data-testid="stSidebar"] .stSelectbox label {{
-        color: {colors['text_secondary']} !important;
-    }}
-    .stSelectbox div[data-baseweb="select"] div {{
-        background-color: {colors['select_bg']} !important;
-        color: {colors['select_text']} !important;
-    }}
-    .stSelectbox ul {{ background-color: {colors['select_bg']} !important; }}
-    .stSelectbox li {{ color: {colors['select_text']} !important; background-color: {colors['select_bg']} !important; }}
-    .stSelectbox li:hover {{ background-color: {colors['button_hover']} !important; }}
-    .main-header {{
-        font-size: 2.5rem; font-weight: 700; color: {colors['primary']};
-        text-align: center; padding: 1rem 0 0.2rem 0; letter-spacing: 2px;
-    }}
-    .sub-header {{
-        font-size: 1rem; color: {colors['text_secondary']}; text-align: center;
-        padding-bottom: 1rem; border-bottom: 1px solid {colors['border']};
-        margin-bottom: 1.5rem;
-    }}
-    .metric-card {{
-        background: {colors['card_bg']}; border-radius: 10px; padding: 1rem;
-        box-shadow: 0 1px 4px rgba(0,0,0,{0.4 if theme=='dark' else 0.08});
-        border-left: 4px solid {colors['primary']}; text-align: center; margin: 0 4px;
-    }}
-    .metric-card .label {{
-        font-size: 0.75rem; color: {colors['text_secondary']}; font-weight: 600;
-        text-transform: uppercase; letter-spacing: 0.5px;
-    }}
-    .metric-card .value {{
-        font-size: 1.8rem; font-weight: 700; color: {colors['text']}; margin: 4px 0;
-    }}
-    .metric-card .sub {{ font-size: 0.7rem; color: {colors['text_secondary']}; }}
-    .result-card {{
-        background: {colors['card_bg']}; border-radius: 12px; padding: 1.5rem;
-        box-shadow: 0 2px 12px rgba(0,0,0,{0.4 if theme=='dark' else 0.08});
-        text-align: center; border-top: 4px solid {colors['primary']}; height: 100%;
-    }}
-    .result-card .label {{ font-size: 0.8rem; color: {colors['text_secondary']}; font-weight: 500; }}
-    .result-card .value {{ font-size: 2.2rem; font-weight: 700; color: {colors['text']}; margin: 6px 0; }}
-    {button_css}
-    .stTabs [data-baseweb="tab-list"] {{
-        gap: 4px; background: {colors['tab_bg']}; padding: 6px;
-        border-radius: 12px; border: 1px solid {colors['border']};
-    }}
-    .stTabs [data-baseweb="tab"] {{
-        border-radius: 8px; padding: 8px 20px; font-weight: 600;
-        color: {colors['tab_text']}; transition: all 0.3s ease;
-    }}
-    .stTabs [aria-selected="true"] {{
-        background: {colors['tab_active']}; color: {colors['tab_active_text']};
-        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    }}
-    .status-normal {{ color: {colors['success']}; font-weight: 700; }}
-    .status-warning {{ color: {colors['warning']}; font-weight: 700; }}
-    .status-danger {{ color: {colors['danger']}; font-weight: 700; }}
-    hr {{ border-color: {colors['border']} !important; }}
-    .stAlert {{ background-color: {colors['card_bg']} !important; border-color: {colors['border']} !important; color: {colors['text']} !important; }}
-    {light_overrides}
-    </style>
-    """
+st.markdown(f"""
+<style>
+.stApp {{ background-color: {colors['bg']}; }}
+section[data-testid="stSidebar"] {{ background-color: #0d1117; border-right: 1px solid #30363d; }}
+.main-header {{ font-size: 2.5rem; font-weight: 700; color: #58a6ff; text-align: center; }}
+.sub-header {{ font-size: 1rem; color: #8b949e; text-align: center; border-bottom: 1px solid #30363d; padding-bottom: 1rem; }}
+.metric-card {{ background: #161b22; border-radius: 10px; padding: 1rem; border-left: 4px solid #58a6ff; text-align: center; }}
+.metric-card .value {{ font-size: 1.8rem; font-weight: 700; color: #f0f6fc; }}
+.metric-card .label {{ font-size: 0.75rem; color: #8b949e; }}
+.status-normal {{ color: #3fb950; font-weight: 700; }}
+.status-warning {{ color: #d29922; font-weight: 700; }}
+.status-danger {{ color: #f85149; font-weight: 700; }}
+.stButton button {{ background: #238636; color: white; font-weight: 700; border: none; border-radius: 8px; padding: 0.6rem 2rem; width: 100%; }}
+.stButton button:hover {{ background: #2ea043; }}
+.chart-container {{ background: {colors['face']}; border-radius: 10px; padding: 1rem; margin-top: 1rem; }}
+</style>
+""", unsafe_allow_html=True)
 
-st.markdown(get_css(colors, st.session_state.theme), unsafe_allow_html=True)
-
-st.markdown(f'<div class="main-header">💧 污水处理智能分析平台</div>', unsafe_allow_html=True)
-st.markdown(f'<div class="sub-header">基于进水参数的污泥指标预测与SRT优化系统</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">💧 污水处理智能分析平台</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">基于进水参数的污泥指标预测与SRT优化系统</div>', unsafe_allow_html=True)
 
 # ============ 加载数据 ============
 @st.cache_data
-def load_default_data():
+def load_data():
     try:
         df = pd.read_excel('随机森林归一化.xlsx', sheet_name='Sheet1')
         return df
     except:
-        try:
-            df = pd.read_excel('data/随机森林归一化.xlsx', sheet_name='Sheet1')
-            return df
-        except:
-            return None
-
-def load_data():
-    if st.session_state.data_source == 'uploaded' and st.session_state.df_loaded is not None:
-        return st.session_state.df_loaded
-    else:
-        return load_default_data()
+        return None
 
 df = load_data()
 if df is None:
     st.error("❌ 找不到数据文件！")
     st.stop()
 
-X_columns = ['Qoutm3/d', 'BOD5 (mg/l)', 'CODcr(mg/l)', 'SS(mg/l)', 
-             'NH3-N(mg/l)', 'TP(mg/l)', 'TN(mg/l)', 'Tin℃']
-y_columns = ['F/M(%)', 'SVI', 'SRT']
+X_cols = ['Qoutm3/d', 'BOD5 (mg/l)', 'CODcr(mg/l)', 'SS(mg/l)', 'NH3-N(mg/l)', 'TP(mg/l)', 'TN(mg/l)', 'Tin℃']
+y_cols = ['F/M(%)', 'SVI', 'SRT']
 
-x_names_cn = {
-    'Qoutm3/d': '进水流量', 'BOD5 (mg/l)': '进水BOD5',
-    'CODcr(mg/l)': '进水CODcr', 'SS(mg/l)': '进水SS',
-    'NH3-N(mg/l)': '进水NH3-N', 'TP(mg/l)': '进水TP',
-    'TN(mg/l)': '进水TN', 'Tin℃': '进水水温'
-}
-y_names_cn = {
-    'F/M(%)': '有机质占比',
-    'SVI': 'SVI (污泥体积指数)',
-    'SRT': 'SRT (污泥龄)'
-}
-x_names_en = {
-    'Qoutm3/d': 'Flow Rate', 'BOD5 (mg/l)': 'BOD5',
-    'CODcr(mg/l)': 'CODcr', 'SS(mg/l)': 'SS',
-    'NH3-N(mg/l)': 'NH3-N', 'TP(mg/l)': 'TP',
-    'TN(mg/l)': 'TN', 'Tin℃': 'Temp'
-}
-y_names_en = {
-    'F/M(%)': 'F/M Ratio',
-    'SVI': 'SVI',
-    'SRT': 'SRT'
-}
+x_cn = {'Qoutm3/d': '进水流量', 'BOD5 (mg/l)': '进水BOD5', 'CODcr(mg/l)': '进水CODcr', 'SS(mg/l)': '进水SS', 'NH3-N(mg/l)': '进水NH3-N', 'TP(mg/l)': '进水TP', 'TN(mg/l)': '进水TN', 'Tin℃': '进水水温'}
+y_cn = {'F/M(%)': '有机质占比', 'SVI': 'SVI (污泥体积指数)', 'SRT': 'SRT (污泥龄)'}
+x_en = {'Qoutm3/d': 'Flow Rate', 'BOD5 (mg/l)': 'BOD5', 'CODcr(mg/l)': 'CODcr', 'SS(mg/l)': 'SS', 'NH3-N(mg/l)': 'NH3-N', 'TP(mg/l)': 'TP', 'TN(mg/l)': 'TN', 'Tin℃': 'Temp'}
+y_en = {'F/M(%)': 'F/M Ratio', 'SVI': 'SVI', 'SRT': 'SRT'}
 
-available_X = [col for col in X_columns if col in df.columns]
-available_y = [col for col in y_columns if col in df.columns]
-
-X_data = df[available_X].copy()
-y_data = df[available_y].copy()
-
-X_data = X_data.astype('float32')
-y_data = y_data.astype('float32')
-
-date_col = None
-if '日期' in df.columns:
-    date_col = '日期'
-    df['日期'] = pd.to_datetime(df['日期'])
-
-combined = pd.concat([X_data, y_data], axis=1).dropna()
-X_data = combined[available_X]
-y_data = combined[available_y]
-
-if date_col:
-    date_data = df.loc[combined.index, date_col]
+X_data = df[X_cols].astype('float32')
+y_data = df[y_cols].astype('float32')
+date_col = df['日期'] if '日期' in df.columns else None
 
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X_data)
 
 # ============ 训练模型 ============
-def train_models(X_data, y_data):
-    X_scaled = scaler.fit_transform(X_data)
-    models = {}
-    results = {}
-    
-    for y_col in y_data.columns:
-        y_target = y_data[y_col].values
-        X_train, X_test, y_train, y_test = train_test_split(
-            X_scaled, y_target, test_size=0.2, random_state=42
-        )
-        
-        lr = LinearRegression()
-        lr.fit(X_train, y_train)
-        
-        lasso = Lasso(alpha=0.1, random_state=42, max_iter=1000)
-        lasso.fit(X_train, y_train)
-        
-        rf = RandomForestRegressor(n_estimators=20, random_state=42, n_jobs=-1)
-        rf.fit(X_train, y_train)
-        
-        xgb_model = xgb.XGBRegressor(
-            n_estimators=20, max_depth=4, learning_rate=0.1,
-            random_state=42, verbosity=0
-        )
-        xgb_model.fit(X_train, y_train)
-        
-        models[y_col] = {
-            'lr': lr, 'lasso': lasso, 'rf': rf, 'xgb': xgb_model,
-            'X_train': X_train, 'X_test': X_test,
-            'y_train': y_train, 'y_test': y_test
-        }
-        
-        results[y_col] = {}
-        for name, model in [('lr', lr), ('lasso', lasso), ('rf', rf), ('xgb', xgb_model)]:
-            y_pred = model.predict(X_test)
-            results[y_col][name] = {
-                'r2': r2_score(y_test, y_pred),
-                'mse': mean_squared_error(y_test, y_pred),
-                'rmse': np.sqrt(mean_squared_error(y_test, y_pred)),
-                'mae': mean_absolute_error(y_test, y_pred)
-            }
-    
+def train_models():
+    models, results = {}, {}
+    for yc in y_cols:
+        yt = y_data[yc].values
+        X_train, X_test, y_train, y_test = train_test_split(X_scaled, yt, test_size=0.2, random_state=42)
+        lr = LinearRegression().fit(X_train, y_train)
+        la = Lasso(alpha=0.1, random_state=42, max_iter=1000).fit(X_train, y_train)
+        rf = RandomForestRegressor(n_estimators=20, random_state=42, n_jobs=-1).fit(X_train, y_train)
+        xg = xgb.XGBRegressor(n_estimators=20, max_depth=4, random_state=42, verbosity=0).fit(X_train, y_train)
+        models[yc] = {'lr': lr, 'lasso': la, 'rf': rf, 'xgb': xg, 'X_train': X_train, 'X_test': X_test, 'y_test': y_test}
+        results[yc] = {}
+        for name, m in [('lr', lr), ('lasso', la), ('rf', rf), ('xgb', xg)]:
+            yp = m.predict(X_test)
+            results[yc][name] = {'r2': r2_score(y_test, yp), 'mse': mean_squared_error(y_test, yp), 'rmse': np.sqrt(mean_squared_error(y_test, yp)), 'mae': mean_absolute_error(y_test, yp)}
     return models, results
 
-def predict_value(input_dict, model):
-    input_array = np.array([input_dict[col] for col in available_X], dtype='float32').reshape(1, -1)
-    input_scaled = scaler.transform(input_array)
-    return model.predict(input_scaled)[0]
+def predict_val(input_dict, model):
+    arr = np.array([input_dict[c] for c in X_cols], dtype='float32').reshape(1, -1)
+    return model.predict(scaler.transform(arr))[0]
 
 # ============ 侧边栏 ============
 with st.sidebar:
     st.markdown("## 📊 进水参数输入")
-    st.markdown("---")
-    
-    input_values = {}
-    for col in available_X:
-        min_val = float(X_data[col].min())
-        max_val = float(X_data[col].max())
-        default_val = float(X_data[col].mean())
-        input_values[col] = st.number_input(
-            f"{x_names_cn.get(col, col)}",
-            min_value=min_val, max_value=max_val,
-            value=default_val,
-            step=(max_val - min_val) / 100,
-            format="%.2f"
-        )
-    
-    st.markdown("---")
+    inputs = {}
+    for c in X_cols:
+        inputs[c] = st.number_input(x_cn[c], value=float(X_data[c].mean()), format="%.2f")
     
     if st.button("🚀 开始预测", use_container_width=True):
-        st.session_state.predicted = True
-        st.session_state.pred_values = {}
-        st.session_state.input_values = input_values.copy()
-        
         if not st.session_state.model_trained:
-            with st.spinner("⏳ 训练模型中..."):
-                models, results = train_models(X_data, y_data)
-                st.session_state.models = models
-                st.session_state.results = results
+            with st.spinner("训练中..."):
+                st.session_state.models, st.session_state.results = train_models()
                 st.session_state.model_trained = True
-        
-        for y_col in available_y:
-            model = st.session_state.models[y_col]['xgb']
-            pred_val = predict_value(input_values, model)
-            st.session_state.pred_values[y_col] = pred_val
+        st.session_state.predicted = True
+        st.session_state.pred_values = {yc: predict_val(inputs, st.session_state.models[yc]['xgb']) for yc in y_cols}
+        st.session_state.input_values = inputs
         st.rerun()
     
     st.markdown("---")
-    st.markdown("## 🎨 主题设置")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🌙 暗色", use_container_width=True):
-            st.session_state.theme = 'dark'
-            st.rerun()
-    with col2:
-        if st.button("☀️ 明亮", use_container_width=True):
-            st.session_state.theme = 'light'
-            st.rerun()
-    
-    current_theme = "🌙 暗色模式" if st.session_state.theme == 'dark' else "☀️ 明亮模式"
-    st.markdown(f"<p style='text-align:center;color:{colors['text_secondary']};font-size:0.8rem;'>当前: {current_theme}</p>", unsafe_allow_html=True)
-    
-    st.markdown("---")
-    st.markdown("## 📁 导入数据")
-    uploaded_file = st.file_uploader(
-        "选择Excel文件",
-        type=['xlsx', 'xls']
-    )
-    
-    if uploaded_file is not None:
-        try:
-            uploaded_df = pd.read_excel(uploaded_file, sheet_name=0)
-            required_cols = ['日期'] + X_columns
-            missing_cols = [col for col in required_cols if col not in uploaded_df.columns]
-            if missing_cols:
-                st.warning(f"⚠️ 缺少列: {missing_cols[:3]}...")
-            else:
-                st.session_state.df_loaded = uploaded_df
-                st.session_state.data_source = 'uploaded'
-                st.session_state.model_trained = False
-                st.success(f"✅ 成功导入 {len(uploaded_df)} 行数据！")
-                st.info("🔄 请点击'开始预测'重新训练")
-                if st.button("🔄 应用新数据"):
-                    st.rerun()
-        except Exception as e:
-            st.error(f"❌ 读取失败: {str(e)}")
-    
-    if st.session_state.data_source == 'uploaded':
-        st.info("📌 使用: 上传的数据")
-    else:
-        st.info("📌 使用: 默认数据")
+    st.markdown("## 🎨 主题")
+    c1, c2 = st.columns(2)
+    if c1.button("🌙 暗色"): st.session_state.theme = 'dark'; st.rerun()
+    if c2.button("☀️ 明亮"): st.session_state.theme = 'light'; st.rerun()
 
-# ============ 自定义正常范围 ============
-FM_MIN, FM_MAX = 20.0, 40.0
-SVI_MIN, SVI_MAX = 50.0, 150.0
-SRT_MIN, SRT_MAX = 5.0, 15.0
+# ============ 显示预测结果 ============
+FM_MIN, FM_MAX, SVI_MIN, SVI_MAX, SRT_MIN, SRT_MAX = 20, 40, 50, 150, 5, 15
 
-# ============ 主区域 ============
 if st.session_state.predicted and st.session_state.pred_values:
-    pred_fm = st.session_state.pred_values.get('F/M(%)', 0)
-    pred_svi = st.session_state.pred_values.get('SVI', 0)
-    pred_srt = st.session_state.pred_values.get('SRT', 0)
-    input_vals = st.session_state.input_values
+    fm, svi, srt = st.session_state.pred_values['F/M(%)'], st.session_state.pred_values['SVI'], st.session_state.pred_values['SRT']
+    def stat(v, mn, mx): return "正常" if mn <= v <= mx else ("偏高" if v > mx else "偏低")
+    def stat_class(v, mn, mx): return "status-normal" if mn <= v <= mx else ("status-danger" if v > mx else "status-warning")
     
-    def get_status(val, min_val, max_val):
-        if val < min_val:
-            return "偏低", "status-warning"
-        elif val > max_val:
-            return "偏高", "status-danger"
-        else:
-            return "正常", "status-normal"
+    opt_srt = max(SRT_MIN, min(SRT_MAX, (fm / 15) * 12))
     
-    fm_status, fm_class = get_status(pred_fm, FM_MIN, FM_MAX)
-    svi_status, svi_class = get_status(pred_svi, SVI_MIN, SVI_MAX)
-    srt_status, srt_class = get_status(pred_srt, SRT_MIN, SRT_MAX)
-    
-    raw_opt_srt = (pred_fm / 15.0) * 12.0
-    opt_srt = max(SRT_MIN, min(SRT_MAX, raw_opt_srt))
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="label">🧪 预测有机质占比</div>
-            <div class="value">{pred_fm:.2f}%</div>
-            <div class="sub"><span class="{fm_class}">{fm_status}</span></div>
-            <div style="font-size:0.65rem;color:{colors['text_secondary']};">正常: {FM_MIN}% ~ {FM_MAX}%</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col2:
-        st.markdown(f"""
-        <div class="metric-card" style="border-left-color:#f0883e;">
-            <div class="label">📊 预测SVI</div>
-            <div class="value">{pred_svi:.2f}</div>
-            <div class="sub"><span class="{svi_class}">{svi_status}</span></div>
-            <div style="font-size:0.65rem;color:{colors['text_secondary']};">正常: {SVI_MIN} ~ {SVI_MAX}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col3:
-        st.markdown(f"""
-        <div class="metric-card" style="border-left-color:#3fb950;">
-            <div class="label">⏳ 模型预测SRT</div>
-            <div class="value">{pred_srt:.2f}<span style="font-size:0.9rem;color:{colors['text_secondary']};"> 天</span></div>
-            <div class="sub"><span class="{srt_class}">{srt_status}</span></div>
-            <div style="font-size:0.65rem;color:{colors['text_secondary']};">正常: {SRT_MIN} ~ {SRT_MAX} 天</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col4:
-        st.markdown(f"""
-        <div class="metric-card" style="border-left-color:#d29922;">
-            <div class="label">🌟 推荐最优污泥龄</div>
-            <div class="value" style="color:#d29922;">{opt_srt:.2f}<span style="font-size:0.9rem;color:{colors['text_secondary']};"> 天</span></div>
-            <div class="sub">基于F/M优化 (5~15天)</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("---")
-    st.markdown("### 💾 导出预测结果")
-    
-    export_data = {'输入参数': [], '数值': []}
-    for col, val in input_vals.items():
-        export_data['输入参数'].append(x_names_cn.get(col, col))
-        export_data['数值'].append(val)
-    
-    export_data['输入参数'].extend(['预测有机质占比(F/M)', '预测SVI', '预测SRT', '推荐最优污泥龄'])
-    export_data['数值'].extend([f"{pred_fm:.2f}%", f"{pred_svi:.2f}", f"{pred_srt:.2f}天", f"{opt_srt:.2f}天"])
-    export_data['输入参数'].extend(['有机质占比状态', 'SVI状态', 'SRT状态'])
-    export_data['数值'].extend([fm_status, svi_status, srt_status])
-    
-    export_df = pd.DataFrame(export_data)
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        export_df.to_excel(writer, sheet_name='预测结果', index=False)
-        df_preview = df.head(20)
-        df_preview.to_excel(writer, sheet_name='原始数据预览', index=False)
-    
-    st.download_button(
-        label="📥 下载预测结果 (Excel)",
-        data=output.getvalue(),
-        file_name=f"预测结果_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
-    )
-    
-else:
-    col1, col2, col3, col4 = st.columns(4)
-    for col in [col1, col2, col3, col4]:
-        with col:
-            st.markdown(f"""
-            <div class="metric-card" style="opacity:0.5;">
-                <div class="label">等待预测...</div>
-                <div class="value" style="font-size:1rem;color:{colors['text_secondary']};">点击"开始预测"</div>
-            </div>
-            """, unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.markdown(f'<div class="metric-card"><div class="label">🧪 有机质占比</div><div class="value">{fm:.2f}%</div><div><span class="{stat_class(fm, FM_MIN, FM_MAX)}">{stat(fm, FM_MIN, FM_MAX)}</span></div></div>', unsafe_allow_html=True)
+    c2.markdown(f'<div class="metric-card" style="border-left-color:#f0883e;"><div class="label">📊 SVI</div><div class="value">{svi:.2f}</div><div><span class="{stat_class(svi, SVI_MIN, SVI_MAX)}">{stat(svi, SVI_MIN, SVI_MAX)}</span></div></div>', unsafe_allow_html=True)
+    c3.markdown(f'<div class="metric-card" style="border-left-color:#3fb950;"><div class="label">⏳ SRT</div><div class="value">{srt:.2f}天</div><div><span class="{stat_class(srt, SRT_MIN, SRT_MAX)}">{stat(srt, SRT_MIN, SRT_MAX)}</span></div></div>', unsafe_allow_html=True)
+    c4.markdown(f'<div class="metric-card" style="border-left-color:#d29922;"><div class="label">🌟 推荐污泥龄</div><div class="value" style="color:#d29922;">{opt_srt:.2f}天</div></div>', unsafe_allow_html=True)
 
-st.markdown("---")
+# ============ Tabs ============
+t1, t2, t3, t4, t5 = st.tabs(["📊 预测分析", "📈 时间序列", "📊 特征重要性", "📉 模型评价", "🔍 SHAP解释"])
 
-# ============ Tabs（5个并列） ============
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📊 预测分析", "📈 时间序列", "📊 特征重要性",
-    "📉 模型评价", "🔍 SHAP解释"
-])
-
-# ===== Tab 1: 预测分析（自动显示） =====
-with tab1:
-    st.markdown("### 🎯 预测结果详情")
-    if st.session_state.predicted and st.session_state.pred_values:
-        col1, col2, col3 = st.columns(3)
+# ===== Tab 1: 预测分析 =====
+with t1:
+    if st.session_state.predicted:
+        st.markdown(f"**有机质占比**: {fm:.2f}% ({stat(fm, FM_MIN, FM_MAX)}) | **SVI**: {svi:.2f} ({stat(svi, SVI_MIN, SVI_MAX)}) | **SRT**: {srt:.2f}天 ({stat(srt, SRT_MIN, SRT_MAX)})")
+        if fm > FM_MAX: st.warning(f"⚠️ 有机质占比偏高 ({fm:.2f}%)，建议减少进水量或增加MLSS")
+        elif fm < FM_MIN: st.warning(f"⚠️ 有机质占比偏低 ({fm:.2f}%)，建议增加进水量或减少MLSS")
+        else: st.success(f"✅ 有机质占比正常 ({fm:.2f}%)")
+        if srt > SRT_MAX: st.warning(f"⚠️ SRT偏高 ({srt:.2f}天)，建议减少污泥回流量")
+        elif srt < SRT_MIN: st.warning(f"⚠️ SRT偏低 ({srt:.2f}天)，建议增加污泥回流量")
+        else: st.success(f"✅ SRT正常 ({srt:.2f}天)")
+        st.info(f"🌟 推荐最优污泥龄: **{opt_srt:.2f}天**")
         
-        with col1:
-            st.markdown(f"""
-            <div class="result-card" style="border-top-color:#58a6ff;">
-                <div class="label">🧪 有机质占比 (F/M)</div>
-                <div class="value">{pred_fm:.2f}%</div>
-                <div><span class="{fm_class}">{fm_status}</span></div>
-                <div style="font-size:0.75rem;color:{colors['text_secondary']};margin-top:8px;">
-                    正常范围: {FM_MIN}% ~ {FM_MAX}%
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="result-card" style="border-top-color:#f0883e;">
-                <div class="label">📊 SVI (污泥体积指数)</div>
-                <div class="value">{pred_svi:.2f}</div>
-                <div><span class="{svi_class}">{svi_status}</span></div>
-                <div style="font-size:0.75rem;color:{colors['text_secondary']};margin-top:8px;">
-                    正常范围: {SVI_MIN} ~ {SVI_MAX}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown(f"""
-            <div class="result-card" style="border-top-color:#3fb950;">
-                <div class="label">⏳ 污泥龄 (SRT)</div>
-                <div class="value">{pred_srt:.2f} 天</div>
-                <div><span class="{srt_class}">{srt_status}</span></div>
-                <div style="font-size:0.75rem;color:{colors['text_secondary']};margin-top:8px;">
-                    正常范围: {SRT_MIN} ~ {SRT_MAX} 天
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
+        # SRT vs F/M 关系图
         st.markdown("---")
         st.markdown("### 📍 SRT vs F/M 关系图")
         fig = go.Figure()
@@ -667,7 +193,7 @@ with tab1:
             marker=dict(size=10, color='#58a6ff', opacity=0.6)
         ))
         fig.add_trace(go.Scatter(
-            x=[pred_srt], y=[pred_fm],
+            x=[srt], y=[fm],
             mode='markers', name='预测值',
             marker=dict(size=22, color='#f85149', symbol='star', line=dict(width=2, color='white' if st.session_state.theme == 'dark' else '#1a1a2e'))
         ))
@@ -676,457 +202,176 @@ with tab1:
             xaxis_title='SRT (天)',
             yaxis_title='F/M (%)',
             height=350,
-            hovermode='closest',
             template='plotly_dark' if st.session_state.theme == 'dark' else 'plotly_white',
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color=colors['text_color'])
+            font=dict(color=colors['text'])
         )
         st.plotly_chart(fig, use_container_width=True)
-        
-        st.markdown("---")
-        st.markdown("### 💡 优化建议")
-        
-        if pred_fm > FM_MAX:
-            st.warning(f"⚠️ 有机质占比偏高 ({pred_fm:.2f}%)，建议：减少进水量或增加MLSS浓度")
-        elif pred_fm < FM_MIN:
-            st.warning(f"⚠️ 有机质占比偏低 ({pred_fm:.2f}%)，建议：增加进水量或减少MLSS浓度")
-        else:
-            st.success(f"✅ 有机质占比正常 ({pred_fm:.2f}%)")
-        
-        if pred_srt > SRT_MAX:
-            st.warning(f"⚠️ SRT偏高 ({pred_srt:.2f}天)，建议：减少污泥回流量，适当排泥")
-        elif pred_srt < SRT_MIN:
-            st.warning(f"⚠️ SRT偏低 ({pred_srt:.2f}天)，建议：增加污泥回流量")
-        else:
-            st.success(f"✅ SRT正常 ({pred_srt:.2f}天)")
-        
-        st.info(f"🌟 推荐最优污泥龄: **{opt_srt:.2f}天** (基于F/M={pred_fm:.1f}%优化)")
     else:
-        st.info("💡 请先在左侧侧边栏输入参数，然后点击 '开始预测' 按钮")
+        st.info("💡 请先点击侧边栏 '开始预测'")
 
-# ===== Tab 2: 时间序列（独立状态） =====
-with tab2:
-    st.markdown("### 📈 历史趋势分析")
-    if date_col:
-        time_target = st.selectbox(
-            "选择指标查看时间序列",
-            available_y + ['Qoutm3/d', 'BOD5 (mg/l)', 'CODcr(mg/l)'],
-            format_func=lambda x: y_names_cn.get(x, x) if x in y_names_cn else x_names_cn.get(x, x),
-            key="time_series"
-        )
-        
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if st.button("📊 生成时间序列图", key="gen_ts", use_container_width=True):
-                st.session_state.show_ts = True
-                st.session_state.ts_target = time_target
-                st.rerun()
-        with col2:
-            if st.button("🗑️ 清除", key="clear_ts", use_container_width=True):
-                st.session_state.show_ts = False
-                st.session_state.ts_target = None
-                st.rerun()
-        
-        if st.session_state.show_ts and st.session_state.ts_target:
-            time_target = st.session_state.ts_target
-            if time_target:
-                if time_target in y_data.columns:
-                    values = y_data[time_target]
-                    title = y_names_cn.get(time_target, time_target)
-                    color = '#58a6ff'
-                else:
-                    values = X_data[time_target]
-                    title = x_names_cn.get(time_target, time_target)
-                    color = '#f0883e'
-                
-                ma_window = st.slider("移动平均窗口", min_value=1, max_value=10, value=3, key="ma_window_ts")
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=date_data, y=values,
-                    mode='lines+markers', name='原始数据',
-                    line=dict(color=color, width=2), marker=dict(size=5, color=color)
-                ))
-                if ma_window > 1:
-                    ma_values = values.rolling(window=ma_window).mean()
-                    fig.add_trace(go.Scatter(
-                        x=date_data, y=ma_values,
-                        mode='lines', name=f'{ma_window}日移动平均',
-                        line=dict(color='#f85149', width=3, dash='dash')
-                    ))
-                fig.update_layout(
-                    title=f'{title} 时间序列趋势',
-                    xaxis_title='日期',
-                    yaxis_title=title,
-                    height=350,
-                    hovermode='x unified',
-                    template='plotly_dark' if st.session_state.theme == 'dark' else 'plotly_white',
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    font=dict(color=colors['text_color'])
-                )
-                st.plotly_chart(fig, use_container_width=True)
-                
-                col1, col2, col3 = st.columns(3)
-                with col1: st.metric("当前值", f"{values.iloc[-1]:.2f}")
-                with col2: st.metric("平均值", f"{values.mean():.2f}")
-                with col3: st.metric("变化率", f"{((values.iloc[-1] - values.iloc[0]) / values.iloc[0] * 100):.2f}%")
+# ===== Tab 2: 时间序列 =====
+with t2:
+    if date_col is not None:
+        target = st.selectbox("选择指标", y_cols + ['Qoutm3/d', 'BOD5 (mg/l)', 'CODcr(mg/l)'], format_func=lambda x: y_cn.get(x, x) if x in y_cn else x_cn.get(x, x))
+        c1, c2 = st.columns([3, 1])
+        if c1.button("📊 生成时间序列图", key="gen_ts"): st.session_state.show_ts = True; st.rerun()
+        if c2.button("🗑️", key="clr_ts"): st.session_state.show_ts = False; st.rerun()
+        if st.session_state.show_ts:
+            vals = y_data[target] if target in y_cols else X_data[target]
+            title = y_cn.get(target, x_cn.get(target, target))
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=date_col, y=vals, mode='lines+markers', name='原始数据'))
+            fig.update_layout(title=f'{title} 趋势', xaxis_title='日期', yaxis_title=title, height=350, template='plotly_dark' if st.session_state.theme == 'dark' else 'plotly_white')
+            st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("⚠️ 数据中未找到日期列")
+        st.warning("⚠️ 无日期列")
 
-# ===== Tab 3: 特征重要性（独立状态） =====
-with tab3:
-    st.markdown("### 📊 特征重要性分析")
-    
-    if not st.session_state.model_trained:
-        st.warning("⚠️ 请先点击侧边栏的 '开始预测' 按钮训练模型")
-    else:
-        model_type = st.radio("选择模型", ['XGBoost', '随机森林', 'Lasso'], horizontal=True, key="importance")
-        target = st.selectbox("选择目标变量", available_y, format_func=lambda x: y_names_cn.get(x, x), key="importance_target")
-        
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if st.button("📊 生成特征重要性图", key="gen_imp", use_container_width=True):
-                st.session_state.show_importance = True
-                st.session_state.imp_model = model_type
-                st.session_state.imp_target = target
-                st.rerun()
-        with col2:
-            if st.button("🗑️ 清除", key="clear_imp", use_container_width=True):
-                st.session_state.show_importance = False
-                st.session_state.imp_model = None
-                st.session_state.imp_target = None
-                st.rerun()
-        
-        if st.session_state.show_importance and st.session_state.imp_target:
-            model_type = st.session_state.imp_model
-            target = st.session_state.imp_target
-            model_key = {'XGBoost': 'xgb', '随机森林': 'rf', 'Lasso': 'lasso'}[model_type]
-            if model_key == 'lasso':
-                importance = np.abs(st.session_state.models[target]['lasso'].coef_)
-            else:
-                importance = st.session_state.models[target][model_key].feature_importances_
-            
-            sorted_idx = np.argsort(importance)[::-1]
-            sorted_names = [x_names_en.get(available_X[i], available_X[i]) for i in sorted_idx]
-            sorted_values = importance[sorted_idx]
-            
+# ===== Tab 3: 特征重要性 =====
+with t3:
+    if st.session_state.model_trained:
+        mt = st.radio("模型", ['XGBoost', '随机森林', 'Lasso'], horizontal=True)
+        tg = st.selectbox("目标", y_cols, format_func=lambda x: y_cn[x])
+        c1, c2 = st.columns([3, 1])
+        if c1.button("📊 生成特征重要性", key="gen_imp"): st.session_state.show_imp = True; st.rerun()
+        if c2.button("🗑️", key="clr_imp"): st.session_state.show_imp = False; st.rerun()
+        if st.session_state.show_imp:
+            key = {'XGBoost':'xgb','随机森林':'rf','Lasso':'lasso'}[mt]
+            imp = np.abs(st.session_state.models[tg]['lasso'].coef_) if key == 'lasso' else st.session_state.models[tg][key].feature_importances_
+            idx = np.argsort(imp)[::-1]
             fig, ax = plt.subplots(figsize=(10, 4))
-            bar_color = '#58a6ff' if st.session_state.theme == 'dark' else '#1a5276'
-            text_color = colors['plot_textcolor']
-            
-            bars = ax.barh(sorted_names, sorted_values, color=bar_color)
-            ax.set_xlabel('Feature Importance', fontsize=11, fontweight='bold', color=text_color)
-            ax.set_title(f'{model_type} - {y_names_en.get(target, target)} Feature Importance', fontsize=13, fontweight='bold', color=text_color)
-            ax.invert_yaxis()
-            ax.set_facecolor(colors['plot_facecolor'])
-            fig.patch.set_facecolor(colors['plot_facecolor'])
-            for i, v in enumerate(sorted_values):
-                ax.text(v + 0.005, i, f'{v:.3f}', va='center', color=text_color, fontsize=9, fontweight='bold')
-            plt.tight_layout()
+            ax.barh([x_en[X_cols[i]] for i in idx], imp[idx], color=colors['bar'])
+            ax.set_xlabel('Importance', color=colors['text'])
+            ax.set_title(f'{mt} - {tg} Feature Importance', color=colors['text'])
+            ax.set_facecolor(colors['face'])
+            fig.patch.set_facecolor(colors['face'])
             st.pyplot(fig)
         
         st.markdown("---")
-        st.markdown("### 🔥 特征相关性热力图")
-        
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if st.button("📊 生成热力图", key="gen_heat", use_container_width=True):
-                st.session_state.show_heatmap = True
-                st.rerun()
-        with col2:
-            if st.button("🗑️ 清除", key="clear_heat", use_container_width=True):
-                st.session_state.show_heatmap = False
-                st.rerun()
-        
-        if st.session_state.show_heatmap:
-            corr_data = pd.concat([X_data, y_data], axis=1)
-            corr_matrix = corr_data.corr()
-            rename_map = {**x_names_en, **y_names_en}
-            corr_matrix = corr_matrix.rename(columns=rename_map, index=rename_map)
-            
+        c1, c2 = st.columns([3, 1])
+        if c1.button("📊 生成热力图", key="gen_heat"): st.session_state.show_heat = True; st.rerun()
+        if c2.button("🗑️", key="clr_heat"): st.session_state.show_heat = False; st.rerun()
+        if st.session_state.show_heat:
+            corr = pd.concat([X_data, y_data], axis=1).corr()
             fig, ax = plt.subplots(figsize=(10, 7))
-            sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', center=0,
-                       fmt='.2f', square=True, linewidths=0.5, ax=ax,
-                       cbar_kws={'shrink': 0.8})
-            text_color = colors['plot_textcolor']
-            ax.set_title('Feature Correlation Heatmap', fontsize=14, fontweight='bold', color=text_color)
-            ax.set_facecolor(colors['plot_facecolor'])
-            fig.patch.set_facecolor(colors['plot_facecolor'])
-            plt.tight_layout()
+            sns.heatmap(corr, annot=True, cmap='coolwarm', fmt='.2f', square=True, ax=ax)
+            ax.set_title('Correlation Heatmap', color=colors['text'])
+            ax.set_facecolor(colors['face'])
+            fig.patch.set_facecolor(colors['face'])
             st.pyplot(fig)
-
-# ===== Tab 4: 模型评价（独立状态） =====
-with tab4:
-    st.markdown("### 📉 真实值 vs 预测值散点图")
-    
-    if not st.session_state.model_trained:
-        st.warning("⚠️ 请先点击侧边栏的 '开始预测' 按钮训练模型")
     else:
-        target_eval = st.selectbox("选择目标变量", available_y, format_func=lambda x: y_names_cn.get(x, x), key='eval')
+        st.warning("⚠️ 请先训练模型")
+
+# ===== Tab 4: 模型评价 =====
+with t4:
+    if st.session_state.model_trained:
+        tg = st.selectbox("目标", y_cols, format_func=lambda x: y_cn[x], key='eval')
         
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if st.button("📊 生成散点图", key="gen_scatter", use_container_width=True):
-                st.session_state.show_scatter = True
-                st.session_state.scatter_target = target_eval
-                st.rerun()
-        with col2:
-            if st.button("🗑️ 清除", key="clear_scatter", use_container_width=True):
-                st.session_state.show_scatter = False
-                st.session_state.scatter_target = None
-                st.rerun()
-        
-        if st.session_state.show_scatter and st.session_state.scatter_target:
-            target_eval = st.session_state.scatter_target
-            model = st.session_state.models[target_eval]['xgb']
-            y_test = st.session_state.models[target_eval]['y_test']
-            y_pred = model.predict(st.session_state.models[target_eval]['X_test'])
-            r2 = r2_score(y_test, y_pred)
-            mse = mean_squared_error(y_test, y_pred)
-            rmse = np.sqrt(mse)
-            mae = mean_absolute_error(y_test, y_pred)
+        # 散点图
+        c1, c2 = st.columns([3, 1])
+        if c1.button("📊 生成散点图", key="gen_scatter"): st.session_state.show_scatter = True; st.rerun()
+        if c2.button("🗑️", key="clr_scatter"): st.session_state.show_scatter = False; st.rerun()
+        if st.session_state.show_scatter:
+            m = st.session_state.models[tg]['xgb']
+            yt = st.session_state.models[tg]['y_test']
+            yp = m.predict(st.session_state.models[tg]['X_test'])
+            r2 = r2_score(yt, yp)
             
             fig, ax = plt.subplots(figsize=(8, 5))
-            text_color = colors['plot_textcolor']
-            ax.scatter(y_test, y_pred, alpha=0.6, color='#58a6ff', s=50)
-            ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2, label='Ideal')
-            ax.set_xlabel('True Value', fontsize=11, fontweight='bold', color=text_color)
-            ax.set_ylabel('Predicted Value', fontsize=11, fontweight='bold', color=text_color)
-            ax.set_title(f'{y_names_en.get(target_eval, target_eval)} - R² = {r2:.4f}', fontsize=13, fontweight='bold', color=text_color)
-            ax.legend(loc='upper left', facecolor=colors['plot_facecolor'], edgecolor=colors['border'], labelcolor=text_color)
-            ax.set_facecolor(colors['plot_facecolor'])
-            fig.patch.set_facecolor(colors['plot_facecolor'])
+            ax.scatter(yt, yp, alpha=0.6, color='#58a6ff', s=50)
+            # 绘制理想线
+            min_val = min(yt.min(), yp.min())
+            max_val = max(yt.max(), yp.max())
+            ax.plot([min_val, max_val], [min_val, max_val], 'r--', lw=2, label='Ideal')
+            
+            # 使用不同的标题和标签
+            y_name_cn = y_cn.get(tg, tg)
+            y_name_en = y_en.get(tg, tg)
+            ax.set_xlabel(f'True {y_name_en}', color=colors['text'], fontsize=11)
+            ax.set_ylabel(f'Predicted {y_name_en}', color=colors['text'], fontsize=11)
+            ax.set_title(f'{y_name_cn} - R² = {r2:.4f}', color=colors['text'], fontsize=13, fontweight='bold')
+            ax.legend(loc='upper left', facecolor=colors['face'], edgecolor='#30363d', labelcolor=colors['text'])
+            ax.set_facecolor(colors['face'])
+            fig.patch.set_facecolor(colors['face'])
             plt.tight_layout()
             st.pyplot(fig)
             
-            st.markdown("---")
-            st.markdown("### 📊 模型评价指标")
-            st.markdown("R²、MSE、RMSE、MAE 综合评价模型性能")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("R² 分数", f"{r2:.4f}", help="越接近1越好")
-            with col2:
-                st.metric("MSE", f"{mse:.4f}", help="均方误差，越小越好")
-            with col3:
-                st.metric("RMSE", f"{rmse:.4f}", help="均方根误差，越小越好")
-            with col4:
-                st.metric("MAE", f"{mae:.4f}", help="平均绝对误差，越小越好")
+            st.markdown(f"**R²**: {r2:.4f} | **MSE**: {mean_squared_error(yt, yp):.4f} | **RMSE**: {np.sqrt(mean_squared_error(yt, yp)):.4f} | **MAE**: {mean_absolute_error(yt, yp):.4f}")
         
+        # 模型对比
         st.markdown("---")
-        st.markdown("### 📊 各模型性能对比")
+        c1, c2 = st.columns([3, 1])
+        if c1.button("📊 生成模型对比", key="gen_compare"): st.session_state.show_compare = True; st.rerun()
+        if c2.button("🗑️", key="clr_compare"): st.session_state.show_compare = False; st.rerun()
+        if st.session_state.show_compare:
+            names, r2s, rmses = ['Linear','Lasso','RF','XGB'], [], []
+            for n in ['lr','lasso','rf','xgb']:
+                r2s.append(st.session_state.results[tg][n]['r2'])
+                rmses.append(st.session_state.results[tg][n]['rmse'])
+            fig, (a1, a2) = plt.subplots(1, 2, figsize=(12, 5))
+            a1.bar(names, r2s, color=['#58a6ff','#f0883e','#3fb950','#f85149'])
+            a1.set_ylabel('R²', color=colors['text'])
+            a1.set_title(f'{tg} - R² Comparison', color=colors['text'])
+            for i, v in enumerate(r2s):
+                a1.text(i, v + 0.01, f'{v:.3f}', ha='center', color=colors['text'])
+            a2.bar(names, rmses, color=['#58a6ff','#f0883e','#3fb950','#f85149'])
+            a2.set_ylabel('RMSE', color=colors['text'])
+            a2.set_title(f'{tg} - RMSE Comparison', color=colors['text'])
+            for i, v in enumerate(rmses):
+                a2.text(i, v + 0.01, f'{v:.3f}', ha='center', color=colors['text'])
+            a1.set_facecolor(colors['face'])
+            a2.set_facecolor(colors['face'])
+            fig.patch.set_facecolor(colors['face'])
+            st.pyplot(fig)
         
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if st.button("📊 生成模型对比图", key="gen_compare", use_container_width=True):
-                st.session_state.show_compare = True
-                st.session_state.scatter_target = target_eval
-                st.rerun()
-        with col2:
-            if st.button("🗑️ 清除", key="clear_compare", use_container_width=True):
-                st.session_state.show_compare = False
-                st.rerun()
-        
-        if st.session_state.show_compare and st.session_state.scatter_target:
-            target_eval = st.session_state.scatter_target
-            model_names = ['Linear', 'Lasso', 'RF', 'XGB']
-            r2_values = [st.session_state.results[target_eval]['lr']['r2'], 
-                         st.session_state.results[target_eval]['lasso']['r2'],
-                         st.session_state.results[target_eval]['rf']['r2'], 
-                         st.session_state.results[target_eval]['xgb']['r2']]
-            rmse_values = [st.session_state.results[target_eval]['lr']['rmse'], 
-                           st.session_state.results[target_eval]['lasso']['rmse'],
-                           st.session_state.results[target_eval]['rf']['rmse'], 
-                           st.session_state.results[target_eval]['xgb']['rmse']]
-            
-            fig2, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-            text_color = colors['plot_textcolor']
-            
-            bars1 = ax1.bar(model_names, r2_values, color=['#58a6ff', '#f0883e', '#3fb950', '#f85149'])
-            ax1.set_ylabel('R² Score', fontsize=11, color=text_color)
-            ax1.set_title('R² Comparison', fontsize=13, fontweight='bold', color=text_color)
-            ax1.set_ylim(0, 1.05)
-            ax1.set_facecolor(colors['plot_facecolor'])
-            fig2.patch.set_facecolor(colors['plot_facecolor'])
-            for bar, val in zip(bars1, r2_values):
-                ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
-                        f'{val:.3f}', ha='center', va='bottom', color=text_color, fontsize=9)
-            
-            bars2 = ax2.bar(model_names, rmse_values, color=['#58a6ff', '#f0883e', '#3fb950', '#f85149'])
-            ax2.set_ylabel('RMSE', fontsize=11, color=text_color)
-            ax2.set_title('RMSE Comparison', fontsize=13, fontweight='bold', color=text_color)
-            ax2.set_facecolor(colors['plot_facecolor'])
-            for bar, val in zip(bars2, rmse_values):
-                ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
-                        f'{val:.3f}', ha='center', va='bottom', color=text_color, fontsize=9)
-            
-            plt.tight_layout()
-            st.pyplot(fig2)
-        
+        # 小提琴图
         st.markdown("---")
-        st.markdown("### 🎻 小提琴图 - 数据分布")
-        
-        target_violin = st.selectbox("选择变量查看分布", available_y + available_X[:4],
-                                    format_func=lambda x: y_names_cn.get(x, x) if x in y_names_cn else x_names_cn.get(x, x),
-                                    key='violin')
-        
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if st.button("📊 生成小提琴图", key="gen_violin", use_container_width=True):
-                st.session_state.show_violin = True
-                st.session_state.violin_target = target_violin
-                st.rerun()
-        with col2:
-            if st.button("🗑️ 清除", key="clear_violin", use_container_width=True):
-                st.session_state.show_violin = False
-                st.session_state.violin_target = None
-                st.rerun()
-        
-        if st.session_state.show_violin and st.session_state.violin_target:
-            target_violin = st.session_state.violin_target
+        tv = st.selectbox("选择变量查看分布", y_cols + ['CODcr(mg/l)', 'SS(mg/l)'], format_func=lambda x: y_cn.get(x, x) if x in y_cn else x_cn.get(x, x), key='violin')
+        c1, c2 = st.columns([3, 1])
+        if c1.button("📊 生成小提琴图", key="gen_violin"): st.session_state.show_violin = True; st.rerun()
+        if c2.button("🗑️", key="clr_violin"): st.session_state.show_violin = False; st.rerun()
+        if st.session_state.show_violin:
+            vals = y_data[tv] if tv in y_cols else X_data[tv]
+            title = y_cn.get(tv, x_cn.get(tv, tv))
             fig, ax = plt.subplots(figsize=(10, 4))
-            if target_violin in y_data.columns:
-                data = y_data[target_violin]
-                title = y_names_en.get(target_violin, target_violin)
-            else:
-                data = X_data[target_violin]
-                title = x_names_en.get(target_violin, target_violin)
-            
-            parts = ax.violinplot(data, positions=[1], showmeans=True, showmedians=True)
+            parts = ax.violinplot(vals, positions=[1], showmeans=True, showmedians=True)
             for pc in parts['bodies']:
                 pc.set_facecolor('#58a6ff')
                 pc.set_alpha(0.7)
-            
-            text_color = colors['plot_textcolor']
-            ax.set_title(f'{title} Violin Plot', fontsize=13, fontweight='bold', color=text_color)
-            ax.set_ylabel(title, fontsize=11, color=text_color)
+            ax.set_title(f'{title} 分布小提琴图', color=colors['text'])
             ax.set_xticks([1])
-            ax.set_xticklabels([title], color=text_color)
+            ax.set_xticklabels([title], color=colors['text'])
+            ax.set_ylabel('数值', color=colors['text'])
             ax.grid(True, alpha=0.2)
-            ax.set_facecolor(colors['plot_facecolor'])
-            fig.patch.set_facecolor(colors['plot_facecolor'])
-            plt.tight_layout()
+            ax.set_facecolor(colors['face'])
+            fig.patch.set_facecolor(colors['face'])
             st.pyplot(fig)
-
-# ===== Tab 5: SHAP解释（独立状态） =====
-with tab5:
-    st.markdown("### 🔍 SHAP 模型解释")
-    st.markdown("SHAP值解释每个特征对预测结果的贡献")
-    
-    if not st.session_state.model_trained:
-        st.warning("⚠️ 请先点击侧边栏的 '开始预测' 按钮训练模型")
     else:
-        shap_target = st.selectbox("选择目标变量", available_y, format_func=lambda x: y_names_cn.get(x, x), key='shap')
-        
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if st.button("🎯 生成 SHAP 解释", key="gen_shap", use_container_width=True):
-                st.session_state.show_shap = True
-                st.session_state.shap_target = shap_target
-                st.rerun()
-        with col2:
-            if st.button("🗑️ 清除", key="clear_shap", use_container_width=True):
-                st.session_state.show_shap = False
-                st.session_state.shap_target = None
-                st.rerun()
-        
-        if st.session_state.show_shap and st.session_state.shap_target:
-            shap_target = st.session_state.shap_target
-            with st.spinner("⏳ 计算SHAP值中..."):
-                try:
-                    model = st.session_state.models[shap_target]['xgb']
-                    X_train = st.session_state.models[shap_target]['X_train']
-                    explainer = shap.TreeExplainer(model)
-                    shap_values = explainer.shap_values(X_train)
-                    feature_names = [x_names_en.get(col, col) for col in available_X]
-                    
-                    st.markdown("#### 📊 SHAP 蜂群图")
-                    fig, ax = plt.subplots(figsize=(10, 5))
-                    ax.set_facecolor(colors['plot_facecolor'])
-                    fig.patch.set_facecolor(colors['plot_facecolor'])
-                    
-                    shap.summary_plot(
-                        shap_values, 
-                        X_train, 
-                        feature_names=feature_names,
-                        show=False,
-                        color_bar=True,
-                        cmap=plt.get_cmap('coolwarm')
-                    )
-                    
-                    ax = plt.gca()
-                    text_color = colors['plot_textcolor']
-                    ax.tick_params(colors=text_color, labelsize=10)
-                    ax.xaxis.label.set_color(text_color)
-                    ax.yaxis.label.set_color(text_color)
-                    ax.title.set_color(text_color)
-                    for text in ax.texts:
-                        text.set_color(text_color)
-                    
-                    plt.tight_layout()
-                    st.pyplot(fig)
-                    
-                    st.markdown("#### 📊 SHAP 特征重要性")
-                    fig2, ax2 = plt.subplots(figsize=(10, 5))
-                    ax2.set_facecolor(colors['plot_facecolor'])
-                    fig2.patch.set_facecolor(colors['plot_facecolor'])
-                    
-                    shap.summary_plot(
-                        shap_values, 
-                        X_train, 
-                        feature_names=feature_names, 
-                        plot_type="bar",
-                        show=False,
-                        color='#58a6ff' if st.session_state.theme == 'dark' else '#1a5276'
-                    )
-                    
-                    ax2 = plt.gca()
-                    ax2.tick_params(colors=text_color, labelsize=10)
-                    ax2.xaxis.label.set_color(text_color)
-                    ax2.yaxis.label.set_color(text_color)
-                    ax2.title.set_color(text_color)
-                    for patch in ax2.patches:
-                        patch.set_color('#58a6ff' if st.session_state.theme == 'dark' else '#1a5276')
-                    
-                    plt.tight_layout()
-                    st.pyplot(fig2)
-                    
-                    st.markdown("---")
-                    st.markdown("#### 🎯 当前输入的SHAP解释")
-                    
-                    input_array = np.array([st.session_state.input_values.get(col, 0) for col in available_X], dtype='float32').reshape(1, -1)
-                    input_scaled = scaler.transform(input_array)
-                    
-                    single_shap = explainer.shap_values(input_scaled)
-                    
-                    contrib_data = []
-                    for i, name in enumerate(feature_names):
-                        shap_val = single_shap[0][i]
-                        contrib_data.append({
-                            '特征': name,
-                            'SHAP值': f"{shap_val:.3f}",
-                            '影响方向': "⬆️ 正向" if shap_val > 0 else "⬇️ 负向"
-                        })
-                    
-                    contrib_df = pd.DataFrame(contrib_data)
-                    st.dataframe(contrib_df, use_container_width=True)
-                    
-                    pred_val = model.predict(input_scaled)[0]
-                    base_val = explainer.expected_value
-                    
-                    st.markdown(f"""
-                    <div style="background:{colors['card_bg']};padding:1rem;border-radius:10px;border:1px solid {colors['border']};margin-top:1rem;">
-                        <b style="color:{colors['primary']};">预测 {y_names_cn.get(shap_target, shap_target)}:</b> 
-                        <span style="color:{colors['text']};font-size:1.2rem;font-weight:bold;">{pred_val:.3f}</span>
-                        <br>
-                        <b style="color:{colors['text_secondary']};">基准值:</b> 
-                        <span style="color:{colors['text']};">{base_val:.3f}</span>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                except Exception as e:
-                    st.error(f"SHAP 计算失败: {e}")
+        st.warning("⚠️ 请先训练模型")
 
-st.markdown("---")
-st.markdown(f"💧 **污水处理智能分析平台 v6.0** | 轻量按需加载版 | {'🌙 暗色模式' if st.session_state.theme == 'dark' else '☀️ 明亮模式'}")
+# ===== Tab 5: SHAP解释 =====
+with t5:
+    if st.session_state.model_trained:
+        tg = st.selectbox("目标", y_cols, format_func=lambda x: y_cn[x], key='shap')
+        c1, c2 = st.columns([3, 1])
+        if c1.button("🎯 生成SHAP解释", key="gen_shap"): st.session_state.show_shap = True; st.rerun()
+        if c2.button("🗑️", key="clr_shap"): st.session_state.show_shap = False; st.rerun()
+        if st.session_state.show_shap:
+            with st.spinner("计算中..."):
+                m = st.session_state.models[tg]['xgb']
+                Xt = st.session_state.models[tg]['X_train']
+                e = shap.TreeExplainer(m)
+                sv = e.shap_values(Xt)
+                fig, ax = plt.subplots(figsize=(10, 5))
+                shap.summary_plot(sv, Xt, feature_names=[x_en[c] for c in X_cols], show=False)
+                ax.set_facecolor(colors['face'])
+                fig.patch.set_facecolor(colors['face'])
+                st.pyplot(fig)
+                fig2, ax2 = plt.subplots(figsize=(10, 5))
+                shap.summary_plot(sv, Xt, feature_names=[x_en[c] for c in X_cols], plot_type="bar", show=False)
+                ax2.set_facecolor(colors['face'])
+                fig2.patch.set_facecolor(colors['face'])
+                st.pyplot(fig2)
+    else:
+        st.warning("⚠️ 请先训练模型")
