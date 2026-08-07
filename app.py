@@ -673,7 +673,6 @@ with tab1:
                 </div>
             </div>
             """, unsafe_allow_html=True
-        
         st.markdown("---")
         st.markdown("### 📍 SRT vs F/M 关系图")
         fig = go.Figure()
