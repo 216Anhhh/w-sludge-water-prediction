@@ -672,8 +672,8 @@ with tab1:
                     正常范围: {SRT_MIN} ~ {SRT_MAX} 天
                 </div>
             </div>
-            """, unsafe_allow_html=True
-                
+            """, unsafe_allow_html=True)
+        
         st.markdown("---")
         st.markdown("### 📍 SRT vs F/M 关系图")
         fig = go.Figure()
@@ -993,12 +993,11 @@ with tab4:
                 plt.tight_layout()
                 st.pyplot(fig)
         
-        # ===== 箱线图对比分析（修复版 - 全英文） =====
+        # ===== 箱线图对比分析 =====
         st.markdown("---")
         st.markdown("### 📦 Boxplot - Model Error Distribution Comparison")
         st.markdown("Compare error distributions of different models in F/M and SVI prediction")
         
-        # 使用英文标签
         box_metric = st.selectbox(
             "Select Target Variable",
             ['F/M(%)', 'SVI'],
@@ -1036,25 +1035,20 @@ with tab4:
                     fig, ax = plt.subplots(figsize=(10, 5))
                     text_color = colors['plot_textcolor']
                     
-                    # 绘制箱线图（去掉labels参数）
                     box = ax.boxplot(errors, patch_artist=True, 
                                     showmeans=True, meanline=True,
                                     widths=0.6)
                     
-                    # 单独设置标签（全英文）
                     ax.set_xticklabels(valid_models, color=text_color)
                     
-                    # 设置箱体颜色
                     colors_box = ['#58a6ff', '#f0883e', '#3fb950', '#f85149']
                     for patch, color in zip(box['boxes'], colors_box[:len(errors)]):
                         patch.set_facecolor(color)
                         patch.set_alpha(0.7)
                     
-                    # 设置离群点
                     for flier in box['fliers']:
                         flier.set(marker='o', color='#f85149', markersize=6)
                     
-                    # 全英文标签
                     metric_display = 'F/M Ratio' if box_metric == 'F/M(%)' else 'SVI'
                     ax.set_xlabel('Model', fontsize=12, color=text_color)
                     ax.set_ylabel('Absolute Error', fontsize=12, color=text_color)
@@ -1068,7 +1062,6 @@ with tab4:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    # 统计信息（全英文）
                     st.markdown("**📊 Model Error Statistics:**")
                     stats_data = []
                     for i, (name, errors_data) in enumerate(zip(valid_models, errors)):
@@ -1082,7 +1075,6 @@ with tab4:
                     stats_df = pd.DataFrame(stats_data)
                     st.dataframe(stats_df, use_container_width=True)
                     
-                    # 自动结论（全英文）
                     best_idx = np.argmin([np.mean(e) for e in errors])
                     best_model = valid_models[best_idx]
                     st.success(f"✅ **{best_model}** has the smallest error in {metric_display} prediction!")
