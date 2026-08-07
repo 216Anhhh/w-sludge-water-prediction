@@ -1049,7 +1049,9 @@ with tab4:
                     # 绘制箱线图
                     box = ax.boxplot(errors, patch_artist=True, 
                                     showmeans=True, meanline=True,
-                                    labels=valid_models, widths=0.6)
+                                    widths=0.6)
+                    #单独设置标签
+                    ax.set_xticklabels(valid_models)
                     
                     # 设置箱体颜色
                     colors_box = ['#58a6ff', '#f0883e', '#3fb950', '#f85149']
