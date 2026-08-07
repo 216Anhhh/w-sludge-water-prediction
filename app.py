@@ -67,7 +67,7 @@ if 'model_trained' not in st.session_state:
 if 'theme' not in st.session_state:
     st.session_state.theme = 'dark'
 
-# ===== 图表状态（独立保存） =====
+# ===== 图表状态 =====
 if 'show_ts' not in st.session_state:
     st.session_state.show_ts = False
 if 'show_importance' not in st.session_state:
@@ -369,7 +369,6 @@ available_y = [col for col in y_columns if col in df.columns]
 X_data = df[available_X].copy()
 y_data = df[available_y].copy()
 
-# float32降低内存
 X_data = X_data.astype('float32')
 y_data = y_data.astype('float32')
 
@@ -400,19 +399,15 @@ def train_models(X_data, y_data):
             X_scaled, y_target, test_size=0.2, random_state=42
         )
         
-        # Linear
         lr = LinearRegression()
         lr.fit(X_train, y_train)
         
-        # Lasso
         lasso = Lasso(alpha=0.1, random_state=42, max_iter=1000)
         lasso.fit(X_train, y_train)
         
-        # Random Forest
         rf = RandomForestRegressor(n_estimators=20, random_state=42, n_jobs=-1)
         rf.fit(X_train, y_train)
         
-        # XGBoost
         xgb_model = xgb.XGBRegressor(
             n_estimators=20, max_depth=4, learning_rate=0.1,
             random_state=42, verbosity=0
@@ -677,7 +672,7 @@ with tab1:
                     正常范围: {SRT_MIN} ~ {SRT_MAX} 天
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True
         
         st.markdown("---")
         st.markdown("### 📍 SRT vs F/M 关系图")
@@ -998,21 +993,20 @@ with tab4:
                 plt.tight_layout()
                 st.pyplot(fig)
         
-        # ===== 箱线图对比分析（新增） =====
+        # ===== 箱线图对比分析（修复版 - 全英文） =====
         st.markdown("---")
-        st.markdown("### 📦 箱线图 - 各模型误差分布对比")
-        st.markdown("对比不同模型在F/M和SVI预测中的误差分布")
+        st.markdown("### 📦 Boxplot - Model Error Distribution Comparison")
+        st.markdown("Compare error distributions of different models in F/M and SVI prediction")
         
-        # 选择要对比的指标
+        # 使用英文标签
         box_metric = st.selectbox(
-            "选择对比指标",
+            "Select Target Variable",
             ['F/M(%)', 'SVI'],
-            format_func=lambda x: y_names_cn.get(x, x),
             key='box_metric_select'
         )
         st.session_state.box_metric = box_metric
         
-        if st.button("📊 生成箱线图对比", key="gen_box_compare"):
+        if st.button("📊 Generate Boxplot Comparison", key="gen_box_compare"):
             st.session_state.show_box = True
             st.session_state.box_params = {'metric': box_metric}
             st.rerun()
@@ -1020,38 +1014,35 @@ with tab4:
         if st.session_state.show_box and st.session_state.box_params:
             box_metric = st.session_state.box_params.get('metric')
             if box_metric:
-                # 获取该目标变量的所有模型预测误差
-                model_names = ['线性回归', 'Lasso', '随机森林', 'XGBoost']
+                model_names = ['Linear', 'Lasso', 'RF', 'XGB']
                 model_keys = ['lr', 'lasso', 'rf', 'xgb']
-                model_display = ['Linear', 'Lasso', 'RF', 'XGB']
                 
                 errors = []
                 valid_models = []
                 
-                for name, key, display in zip(model_names, model_keys, model_display):
+                for name, key in zip(model_names, model_keys):
                     try:
                         y_test = st.session_state.models[box_metric]['y_test']
                         y_pred = st.session_state.models[box_metric][key].predict(
                             st.session_state.models[box_metric]['X_test']
                         )
-                        # 计算绝对误差
                         error = np.abs(y_test - y_pred)
                         errors.append(error)
-                        valid_models.append(display)
+                        valid_models.append(name)
                     except:
                         continue
                 
                 if len(errors) > 0:
-                    # 绘制箱线图对比
                     fig, ax = plt.subplots(figsize=(10, 5))
                     text_color = colors['plot_textcolor']
                     
-                    # 绘制箱线图
+                    # 绘制箱线图（去掉labels参数）
                     box = ax.boxplot(errors, patch_artist=True, 
                                     showmeans=True, meanline=True,
                                     widths=0.6)
-                    #单独设置标签
-                    ax.set_xticklabels(valid_models)
+                    
+                    # 单独设置标签（全英文）
+                    ax.set_xticklabels(valid_models, color=text_color)
                     
                     # 设置箱体颜色
                     colors_box = ['#58a6ff', '#f0883e', '#3fb950', '#f85149']
@@ -1063,42 +1054,40 @@ with tab4:
                     for flier in box['fliers']:
                         flier.set(marker='o', color='#f85149', markersize=6)
                     
-                    ax.set_xlabel('模型', fontsize=12, color=text_color)
-                    ax.set_ylabel('绝对误差', fontsize=12, color=text_color)
-                    ax.set_title(f'{y_names_cn.get(box_metric, box_metric)} - 各模型误差分布对比', 
+                    # 全英文标签
+                    metric_display = 'F/M Ratio' if box_metric == 'F/M(%)' else 'SVI'
+                    ax.set_xlabel('Model', fontsize=12, color=text_color)
+                    ax.set_ylabel('Absolute Error', fontsize=12, color=text_color)
+                    ax.set_title(f'{metric_display} - Model Error Distribution Comparison', 
                                 fontsize=14, fontweight='bold', color=text_color)
                     ax.grid(True, alpha=0.3)
                     ax.set_facecolor(colors['plot_facecolor'])
                     fig.patch.set_facecolor(colors['plot_facecolor'])
-                    
-                    # 设置标签颜色
                     ax.tick_params(colors=text_color)
                     
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    # 显示统计信息表格
-                    st.markdown("**📊 各模型误差统计：**")
+                    # 统计信息（全英文）
+                    st.markdown("**📊 Model Error Statistics:**")
                     stats_data = []
                     for i, (name, errors_data) in enumerate(zip(valid_models, errors)):
                         stats_data.append({
-                            '模型': name,
-                            '平均误差': f"{np.mean(errors_data):.4f}",
-                            '标准差': f"{np.std(errors_data):.4f}",
-                            '最大误差': f"{np.max(errors_data):.4f}",
-                            '中位误差': f"{np.median(errors_data):.4f}"
+                            'Model': name,
+                            'Mean Error': f"{np.mean(errors_data):.4f}",
+                            'Std Dev': f"{np.std(errors_data):.4f}",
+                            'Max Error': f"{np.max(errors_data):.4f}",
+                            'Median Error': f"{np.median(errors_data):.4f}"
                         })
                     stats_df = pd.DataFrame(stats_data)
                     st.dataframe(stats_df, use_container_width=True)
                     
-                    # 结论
-                    st.markdown("**💡 分析结论：**")
-                    # 找出平均误差最小的模型
+                    # 自动结论（全英文）
                     best_idx = np.argmin([np.mean(e) for e in errors])
                     best_model = valid_models[best_idx]
-                    st.success(f"✅ **{best_model}** 在 {y_names_cn.get(box_metric, box_metric)} 预测中误差最小，表现最优！")
+                    st.success(f"✅ **{best_model}** has the smallest error in {metric_display} prediction!")
                 else:
-                    st.warning("⚠️ 暂无模型数据，请先点击'开始预测'训练模型")
+                    st.warning("⚠️ No model data available. Please click 'Start Prediction' first.")
 
 # ===== Tab 5: SHAP解释 =====
 with tab5:
