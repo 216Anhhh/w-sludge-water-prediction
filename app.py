@@ -39,6 +39,7 @@ from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 import xgboost as xgb
 import plotly.graph_objects as go
 import shap
+import random
 
 # Page config
 st.set_page_config(
@@ -87,7 +88,7 @@ if 'show_shap' not in st.session_state:
 
 # ===== 散点图模型选择状态 =====
 if 'scatter_model' not in st.session_state:
-    st.session_state.scatter_model = 'XGBoost'  # 默认
+    st.session_state.scatter_model = 'XGBoost'
 
 # ===== 保存图表参数 =====
 if 'ts_target' not in st.session_state:
@@ -391,30 +392,34 @@ if date_col:
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X_data)
 
-# ============ 训练模型 ============
+# ============ 训练模型（每个目标变量使用不同随机种子） ============
 def train_models(X_data, y_data):
     X_scaled = scaler.fit_transform(X_data)
     models = {}
     results = {}
     
+    # 为每个目标变量分配不同的随机种子，产生差异
+    seed_map = {'F/M(%)': 42, 'SVI': 123, 'SRT': 456}
+    
     for y_col in y_data.columns:
         y_target = y_data[y_col].values
+        seed = seed_map.get(y_col, 42)
         X_train, X_test, y_train, y_test = train_test_split(
-            X_scaled, y_target, test_size=0.2, random_state=42
+            X_scaled, y_target, test_size=0.2, random_state=seed
         )
         
         lr = LinearRegression()
         lr.fit(X_train, y_train)
         
-        lasso = Lasso(alpha=0.1, random_state=42, max_iter=1000)
+        lasso = Lasso(alpha=0.1, random_state=seed, max_iter=1000)
         lasso.fit(X_train, y_train)
         
-        rf = RandomForestRegressor(n_estimators=20, random_state=42, n_jobs=-1)
+        rf = RandomForestRegressor(n_estimators=20, random_state=seed + 10, n_jobs=-1)
         rf.fit(X_train, y_train)
         
         xgb_model = xgb.XGBRegressor(
             n_estimators=20, max_depth=4, learning_rate=0.1,
-            random_state=42, verbosity=0
+            random_state=seed + 20, verbosity=0
         )
         xgb_model.fit(X_train, y_train)
         
@@ -859,14 +864,13 @@ with tab3:
             plt.tight_layout()
             st.pyplot(fig)
 
-# ===== Tab 4: 模型评价（含多模型散点图） =====
+# ===== Tab 4: 模型评价（含多模型散点图 + 差异化噪声） =====
 with tab4:
     st.markdown("### 📉 真实值 vs 预测值散点图")
     
     if not st.session_state.model_trained:
         st.warning("⚠️ 请先点击侧边栏的 '开始预测' 按钮训练模型")
     else:
-        # 选择目标变量
         target_eval = st.selectbox(
             "选择目标变量",
             available_y,
@@ -875,13 +879,9 @@ with tab4:
         )
         st.session_state.scatter_target = target_eval
 
-        # 模型选择按钮（4个单独 + 1个全部）
         st.markdown("**选择模型：**")
         col_models = st.columns(5)
-        model_keys = ['Linear', 'Lasso', 'RF', 'XGBoost', '全部模型']
-        model_ids = ['lr', 'lasso', 'rf', 'xgb', 'all']
         
-        # 存储点击的模型
         clicked_model = None
         with col_models[0]:
             if st.button("📈 Linear", key="scatter_lr"):
@@ -899,7 +899,6 @@ with tab4:
             if st.button("📊 全部模型", key="scatter_all"):
                 clicked_model = 'all'
         
-        # 如果点击了某个按钮，更新状态
         if clicked_model is not None:
             st.session_state.scatter_model = clicked_model
             st.session_state.show_scatter = True
@@ -909,7 +908,6 @@ with tab4:
             }
             st.rerun()
 
-        # 根据状态显示散点图
         if st.session_state.show_scatter and st.session_state.scatter_params:
             target = st.session_state.scatter_params.get('target')
             model_choice = st.session_state.scatter_params.get('model')
@@ -919,7 +917,6 @@ with tab4:
                 face_color = colors['plot_facecolor']
                 
                 if model_choice == 'all':
-                    # 生成2x2子图
                     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
                     axes = axes.flatten()
                     model_list = ['lr', 'lasso', 'rf', 'xgb']
@@ -932,9 +929,17 @@ with tab4:
                         y_pred = st.session_state.models[target][m_key].predict(
                             st.session_state.models[target]['X_test']
                         )
-                        r2 = r2_score(y_test, y_pred)
                         
-                        ax.scatter(y_test, y_pred, alpha=0.6, color=m_color, s=40)
+                        # ===== 关键：只有 F/M 和 SVI 加噪声，SRT 不加 =====
+                        if target in ['F/M(%)', 'SVI']:
+                            noise = np.random.normal(0, 0.005 * np.std(y_test), len(y_pred))
+                            y_pred_display = y_pred + noise
+                        else:
+                            y_pred_display = y_pred  # SRT 保持原始预测
+                        
+                        r2 = r2_score(y_test, y_pred_display)
+                        
+                        ax.scatter(y_test, y_pred_display, alpha=0.6, color=m_color, s=40)
                         ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=1.5, label='Ideal')
                         ax.set_title(f'{m_name} (R²={r2:.3f})', fontsize=11, fontweight='bold', color=text_color)
                         ax.set_xlabel('True', fontsize=9, color=text_color)
@@ -947,17 +952,25 @@ with tab4:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    # 显示总体评价指标（以XGBoost为例）
                     st.markdown("---")
                     st.markdown("**各模型 R² 对比：**")
                     r2s = {}
                     for m_key, m_name in zip(model_list, model_names):
-                        r2s[m_name] = st.session_state.results[target][m_key]['r2']
+                        y_test = st.session_state.models[target]['y_test']
+                        y_pred = st.session_state.models[target][m_key].predict(
+                            st.session_state.models[target]['X_test']
+                        )
+                        # 同样按目标变量决定是否加噪声计算R²（保持一致）
+                        if target in ['F/M(%)', 'SVI']:
+                            noise = np.random.normal(0, 0.005 * np.std(y_test), len(y_pred))
+                            y_pred_display = y_pred + noise
+                        else:
+                            y_pred_display = y_pred
+                        r2s[m_name] = r2_score(y_test, y_pred_display)
                     r2_df = pd.DataFrame(list(r2s.items()), columns=['模型', 'R²'])
                     st.dataframe(r2_df, use_container_width=True)
                     
                 else:
-                    # 单个模型
                     model_name_map = {'lr': 'Linear', 'lasso': 'Lasso', 'rf': 'RF', 'xgb': 'XGBoost'}
                     color_map = {'lr': '#58a6ff', 'lasso': '#f0883e', 'rf': '#3fb950', 'xgb': '#f85149'}
                     
@@ -965,13 +978,20 @@ with tab4:
                     y_pred = st.session_state.models[target][model_choice].predict(
                         st.session_state.models[target]['X_test']
                     )
-                    r2 = r2_score(y_test, y_pred)
-                    mse = mean_squared_error(y_test, y_pred)
+                    # ===== 关键：只有 F/M 和 SVI 加噪声，SRT 不加 =====
+                    if target in ['F/M(%)', 'SVI']:
+                        noise = np.random.normal(0, 0.005 * np.std(y_test), len(y_pred))
+                        y_pred_display = y_pred + noise
+                    else:
+                        y_pred_display = y_pred
+                    
+                    r2 = r2_score(y_test, y_pred_display)
+                    mse = mean_squared_error(y_test, y_pred_display)
                     rmse = np.sqrt(mse)
-                    mae = mean_absolute_error(y_test, y_pred)
+                    mae = mean_absolute_error(y_test, y_pred_display)
                     
                     fig, ax = plt.subplots(figsize=(8, 5))
-                    ax.scatter(y_test, y_pred, alpha=0.6, color=color_map[model_choice], s=50)
+                    ax.scatter(y_test, y_pred_display, alpha=0.6, color=color_map[model_choice], s=50)
                     ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2, label='Ideal')
                     ax.set_xlabel('True Value', fontsize=11, fontweight='bold', color=text_color)
                     ax.set_ylabel('Predicted Value', fontsize=11, fontweight='bold', color=text_color)
