@@ -85,6 +85,10 @@ if 'show_box' not in st.session_state:
 if 'show_shap' not in st.session_state:
     st.session_state.show_shap = False
 
+# ===== 散点图模型选择状态 =====
+if 'scatter_model' not in st.session_state:
+    st.session_state.scatter_model = 'XGBoost'  # 默认
+
 # ===== 保存图表参数 =====
 if 'ts_target' not in st.session_state:
     st.session_state.ts_target = None
@@ -855,57 +859,141 @@ with tab3:
             plt.tight_layout()
             st.pyplot(fig)
 
-# ===== Tab 4: 模型评价 =====
+# ===== Tab 4: 模型评价（含多模型散点图） =====
 with tab4:
     st.markdown("### 📉 真实值 vs 预测值散点图")
     
     if not st.session_state.model_trained:
         st.warning("⚠️ 请先点击侧边栏的 '开始预测' 按钮训练模型")
     else:
-        target_eval = st.selectbox("选择目标变量", available_y, format_func=lambda x: y_names_cn.get(x, x), key='eval')
+        # 选择目标变量
+        target_eval = st.selectbox(
+            "选择目标变量",
+            available_y,
+            format_func=lambda x: y_names_cn.get(x, x),
+            key='eval'
+        )
         st.session_state.scatter_target = target_eval
+
+        # 模型选择按钮（4个单独 + 1个全部）
+        st.markdown("**选择模型：**")
+        col_models = st.columns(5)
+        model_keys = ['Linear', 'Lasso', 'RF', 'XGBoost', '全部模型']
+        model_ids = ['lr', 'lasso', 'rf', 'xgb', 'all']
         
-        if st.button("📊 生成散点图", key="gen_scatter"):
+        # 存储点击的模型
+        clicked_model = None
+        with col_models[0]:
+            if st.button("📈 Linear", key="scatter_lr"):
+                clicked_model = 'lr'
+        with col_models[1]:
+            if st.button("📈 Lasso", key="scatter_lasso"):
+                clicked_model = 'lasso'
+        with col_models[2]:
+            if st.button("📈 RF", key="scatter_rf"):
+                clicked_model = 'rf'
+        with col_models[3]:
+            if st.button("📈 XGBoost", key="scatter_xgb"):
+                clicked_model = 'xgb'
+        with col_models[4]:
+            if st.button("📊 全部模型", key="scatter_all"):
+                clicked_model = 'all'
+        
+        # 如果点击了某个按钮，更新状态
+        if clicked_model is not None:
+            st.session_state.scatter_model = clicked_model
             st.session_state.show_scatter = True
-            st.session_state.scatter_params = {'target': target_eval}
+            st.session_state.scatter_params = {
+                'target': target_eval,
+                'model': clicked_model
+            }
             st.rerun()
-        
+
+        # 根据状态显示散点图
         if st.session_state.show_scatter and st.session_state.scatter_params:
-            target_eval = st.session_state.scatter_params.get('target')
-            if target_eval:
-                model = st.session_state.models[target_eval]['xgb']
-                y_test = st.session_state.models[target_eval]['y_test']
-                y_pred = model.predict(st.session_state.models[target_eval]['X_test'])
-                r2 = r2_score(y_test, y_pred)
-                mse = mean_squared_error(y_test, y_pred)
-                rmse = np.sqrt(mse)
-                mae = mean_absolute_error(y_test, y_pred)
-                
-                fig, ax = plt.subplots(figsize=(8, 5))
+            target = st.session_state.scatter_params.get('target')
+            model_choice = st.session_state.scatter_params.get('model')
+            
+            if target and model_choice:
                 text_color = colors['plot_textcolor']
-                ax.scatter(y_test, y_pred, alpha=0.6, color='#58a6ff', s=50)
-                ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2, label='Ideal')
-                ax.set_xlabel('True Value', fontsize=11, fontweight='bold', color=text_color)
-                ax.set_ylabel('Predicted Value', fontsize=11, fontweight='bold', color=text_color)
-                ax.set_title(f'{y_names_en.get(target_eval, target_eval)} - R² = {r2:.4f}', fontsize=13, fontweight='bold', color=text_color)
-                ax.legend(loc='upper left', facecolor=colors['plot_facecolor'], edgecolor=colors['border'], labelcolor=text_color)
-                ax.set_facecolor(colors['plot_facecolor'])
-                fig.patch.set_facecolor(colors['plot_facecolor'])
-                plt.tight_layout()
-                st.pyplot(fig)
+                face_color = colors['plot_facecolor']
                 
-                st.markdown("---")
-                st.markdown("### 📊 模型评价指标")
-                
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("R² 分数", f"{r2:.4f}", help="越接近1越好")
-                with col2:
-                    st.metric("MSE", f"{mse:.4f}", help="均方误差，越小越好")
-                with col3:
-                    st.metric("RMSE", f"{rmse:.4f}", help="均方根误差，越小越好")
-                with col4:
-                    st.metric("MAE", f"{mae:.4f}", help="平均绝对误差，越小越好")
+                if model_choice == 'all':
+                    # 生成2x2子图
+                    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+                    axes = axes.flatten()
+                    model_list = ['lr', 'lasso', 'rf', 'xgb']
+                    model_names = ['Linear', 'Lasso', 'RF', 'XGBoost']
+                    colors_list = ['#58a6ff', '#f0883e', '#3fb950', '#f85149']
+                    
+                    for idx, (m_key, m_name, m_color) in enumerate(zip(model_list, model_names, colors_list)):
+                        ax = axes[idx]
+                        y_test = st.session_state.models[target]['y_test']
+                        y_pred = st.session_state.models[target][m_key].predict(
+                            st.session_state.models[target]['X_test']
+                        )
+                        r2 = r2_score(y_test, y_pred)
+                        
+                        ax.scatter(y_test, y_pred, alpha=0.6, color=m_color, s=40)
+                        ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=1.5, label='Ideal')
+                        ax.set_title(f'{m_name} (R²={r2:.3f})', fontsize=11, fontweight='bold', color=text_color)
+                        ax.set_xlabel('True', fontsize=9, color=text_color)
+                        ax.set_ylabel('Pred', fontsize=9, color=text_color)
+                        ax.legend(loc='upper left', fontsize=8, facecolor=face_color, edgecolor='none')
+                        ax.tick_params(colors=text_color)
+                        ax.set_facecolor(face_color)
+                    
+                    fig.patch.set_facecolor(face_color)
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    
+                    # 显示总体评价指标（以XGBoost为例）
+                    st.markdown("---")
+                    st.markdown("**各模型 R² 对比：**")
+                    r2s = {}
+                    for m_key, m_name in zip(model_list, model_names):
+                        r2s[m_name] = st.session_state.results[target][m_key]['r2']
+                    r2_df = pd.DataFrame(list(r2s.items()), columns=['模型', 'R²'])
+                    st.dataframe(r2_df, use_container_width=True)
+                    
+                else:
+                    # 单个模型
+                    model_name_map = {'lr': 'Linear', 'lasso': 'Lasso', 'rf': 'RF', 'xgb': 'XGBoost'}
+                    color_map = {'lr': '#58a6ff', 'lasso': '#f0883e', 'rf': '#3fb950', 'xgb': '#f85149'}
+                    
+                    y_test = st.session_state.models[target]['y_test']
+                    y_pred = st.session_state.models[target][model_choice].predict(
+                        st.session_state.models[target]['X_test']
+                    )
+                    r2 = r2_score(y_test, y_pred)
+                    mse = mean_squared_error(y_test, y_pred)
+                    rmse = np.sqrt(mse)
+                    mae = mean_absolute_error(y_test, y_pred)
+                    
+                    fig, ax = plt.subplots(figsize=(8, 5))
+                    ax.scatter(y_test, y_pred, alpha=0.6, color=color_map[model_choice], s=50)
+                    ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2, label='Ideal')
+                    ax.set_xlabel('True Value', fontsize=11, fontweight='bold', color=text_color)
+                    ax.set_ylabel('Predicted Value', fontsize=11, fontweight='bold', color=text_color)
+                    ax.set_title(f'{model_name_map[model_choice]} - {y_names_en.get(target, target)} (R²={r2:.4f})', 
+                                fontsize=13, fontweight='bold', color=text_color)
+                    ax.legend(loc='upper left', facecolor=face_color, edgecolor='none', labelcolor=text_color)
+                    ax.set_facecolor(face_color)
+                    fig.patch.set_facecolor(face_color)
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    
+                    st.markdown("---")
+                    st.markdown("### 📊 模型评价指标")
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("R² 分数", f"{r2:.4f}")
+                    with col2:
+                        st.metric("MSE", f"{mse:.4f}")
+                    with col3:
+                        st.metric("RMSE", f"{rmse:.4f}")
+                    with col4:
+                        st.metric("MAE", f"{mae:.4f}")
         
         st.markdown("---")
         st.markdown("### 📊 各模型性能对比")
