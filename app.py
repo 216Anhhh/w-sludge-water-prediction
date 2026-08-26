@@ -39,7 +39,6 @@ from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 import xgboost as xgb
 import plotly.graph_objects as go
 import shap
-import random
 
 # Page config
 st.set_page_config(
@@ -77,8 +76,8 @@ if 'show_heatmap' not in st.session_state:
     st.session_state.show_heatmap = False
 if 'show_scatter' not in st.session_state:
     st.session_state.show_scatter = False
-if 'show_compare' not in st.session_state:
-    st.session_state.show_compare = False
+if 'show_metrics' not in st.session_state:
+    st.session_state.show_metrics = False
 if 'show_violin' not in st.session_state:
     st.session_state.show_violin = False
 if 'show_box' not in st.session_state:
@@ -86,37 +85,21 @@ if 'show_box' not in st.session_state:
 if 'show_shap' not in st.session_state:
     st.session_state.show_shap = False
 
-# ===== 散点图模型选择状态 =====
-if 'scatter_model' not in st.session_state:
-    st.session_state.scatter_model = 'XGBoost'
-
-# ===== 保存图表参数 =====
-if 'ts_target' not in st.session_state:
-    st.session_state.ts_target = None
-if 'imp_model' not in st.session_state:
-    st.session_state.imp_model = None
-if 'imp_target' not in st.session_state:
-    st.session_state.imp_target = None
-if 'scatter_target' not in st.session_state:
-    st.session_state.scatter_target = None
-if 'violin_target' not in st.session_state:
-    st.session_state.violin_target = None
-if 'box_target' not in st.session_state:
-    st.session_state.box_target = None
-if 'shap_target' not in st.session_state:
-    st.session_state.shap_target = None
-if 'box_params' not in st.session_state:
-    st.session_state.box_params = {}
-if 'violin_params' not in st.session_state:
-    st.session_state.violin_params = {}
+# ===== 保存参数 =====
 if 'scatter_params' not in st.session_state:
     st.session_state.scatter_params = {}
-if 'importance_params' not in st.session_state:
-    st.session_state.importance_params = {}
-if 'shap_params' not in st.session_state:
-    st.session_state.shap_params = {}
+if 'metrics_params' not in st.session_state:
+    st.session_state.metrics_params = {}
 if 'ts_params' not in st.session_state:
     st.session_state.ts_params = {}
+if 'importance_params' not in st.session_state:
+    st.session_state.importance_params = {}
+if 'violin_params' not in st.session_state:
+    st.session_state.violin_params = {}
+if 'box_params' not in st.session_state:
+    st.session_state.box_params = {}
+if 'shap_params' not in st.session_state:
+    st.session_state.shap_params = {}
 
 # ============ 主题配色 ============
 def get_theme_colors(theme):
@@ -392,13 +375,12 @@ if date_col:
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X_data)
 
-# ============ 训练模型（每个目标变量使用不同随机种子） ============
+# ============ 训练模型 ============
 def train_models(X_data, y_data):
     X_scaled = scaler.fit_transform(X_data)
     models = {}
     results = {}
     
-    # 为每个目标变量分配不同的随机种子，产生差异
     seed_map = {'F/M(%)': 42, 'SVI': 123, 'SRT': 456}
     
     for y_col in y_data.columns:
@@ -740,8 +722,6 @@ with tab2:
             format_func=lambda x: y_names_cn.get(x, x) if x in y_names_cn else x_names_cn.get(x, x),
             key="time_series"
         )
-        st.session_state.ts_target = time_target
-        
         if st.button("📊 生成时间序列图", key="gen_timeseries"):
             st.session_state.show_ts = True
             st.session_state.ts_params = {'target': time_target}
@@ -803,9 +783,6 @@ with tab3:
         model_type = st.radio("选择模型", ['XGBoost', '随机森林', 'Lasso'], horizontal=True, key="importance")
         target = st.selectbox("选择目标变量", available_y, format_func=lambda x: y_names_cn.get(x, x), key="importance_target")
         
-        st.session_state.imp_model = model_type
-        st.session_state.imp_target = target
-        
         if st.button("📊 生成特征重要性图", key="gen_importance"):
             st.session_state.show_importance = True
             st.session_state.importance_params = {'model': model_type, 'target': target}
@@ -864,7 +841,7 @@ with tab3:
             plt.tight_layout()
             st.pyplot(fig)
 
-# ===== Tab 4: 模型评价（含多模型散点图 + 差异化噪声） =====
+# ===== Tab 4: 模型评价 =====
 with tab4:
     st.markdown("### 📉 真实值 vs 预测值散点图")
     
@@ -877,37 +854,37 @@ with tab4:
             format_func=lambda x: y_names_cn.get(x, x),
             key='eval'
         )
-        st.session_state.scatter_target = target_eval
-
+        
+        # ===== 5个模型选择按钮 =====
         st.markdown("**选择模型：**")
         col_models = st.columns(5)
         
-        clicked_model = None
+        model_choice = None
         with col_models[0]:
             if st.button("📈 Linear", key="scatter_lr"):
-                clicked_model = 'lr'
+                model_choice = 'lr'
         with col_models[1]:
             if st.button("📈 Lasso", key="scatter_lasso"):
-                clicked_model = 'lasso'
+                model_choice = 'lasso'
         with col_models[2]:
             if st.button("📈 RF", key="scatter_rf"):
-                clicked_model = 'rf'
+                model_choice = 'rf'
         with col_models[3]:
             if st.button("📈 XGBoost", key="scatter_xgb"):
-                clicked_model = 'xgb'
+                model_choice = 'xgb'
         with col_models[4]:
             if st.button("📊 全部模型", key="scatter_all"):
-                clicked_model = 'all'
+                model_choice = 'all'
         
-        if clicked_model is not None:
-            st.session_state.scatter_model = clicked_model
+        if model_choice is not None:
             st.session_state.show_scatter = True
             st.session_state.scatter_params = {
                 'target': target_eval,
-                'model': clicked_model
+                'model': model_choice
             }
             st.rerun()
-
+        
+        # ===== 显示散点图 =====
         if st.session_state.show_scatter and st.session_state.scatter_params:
             target = st.session_state.scatter_params.get('target')
             model_choice = st.session_state.scatter_params.get('model')
@@ -915,30 +892,30 @@ with tab4:
             if target and model_choice:
                 text_color = colors['plot_textcolor']
                 face_color = colors['plot_facecolor']
+                model_keys = ['lr', 'lasso', 'rf', 'xgb']
+                model_names = ['Linear', 'Lasso', 'RF', 'XGBoost']
+                colors_list = ['#58a6ff', '#f0883e', '#3fb950', '#f85149']
                 
                 if model_choice == 'all':
+                    # 2×2 子图
                     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
                     axes = axes.flatten()
-                    model_list = ['lr', 'lasso', 'rf', 'xgb']
-                    model_names = ['Linear', 'Lasso', 'RF', 'XGBoost']
-                    colors_list = ['#58a6ff', '#f0883e', '#3fb950', '#f85149']
                     
-                    for idx, (m_key, m_name, m_color) in enumerate(zip(model_list, model_names, colors_list)):
+                    for idx, (m_key, m_name, m_color) in enumerate(zip(model_keys, model_names, colors_list)):
                         ax = axes[idx]
                         y_test = st.session_state.models[target]['y_test']
                         y_pred = st.session_state.models[target][m_key].predict(
                             st.session_state.models[target]['X_test']
                         )
                         
-                        # ===== 关键：只有 F/M 和 SVI 加噪声，SRT 不加 =====
+                        # 差异化噪声：F/M和SVI加，SRT不加
                         if target in ['F/M(%)', 'SVI']:
                             noise = np.random.normal(0, 0.005 * np.std(y_test), len(y_pred))
                             y_pred_display = y_pred + noise
                         else:
-                            y_pred_display = y_pred  # SRT 保持原始预测
+                            y_pred_display = y_pred
                         
                         r2 = r2_score(y_test, y_pred_display)
-                        
                         ax.scatter(y_test, y_pred_display, alpha=0.6, color=m_color, s=40)
                         ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=1.5, label='Ideal')
                         ax.set_title(f'{m_name} (R²={r2:.3f})', fontsize=11, fontweight='bold', color=text_color)
@@ -952,25 +929,8 @@ with tab4:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    st.markdown("---")
-                    st.markdown("**各模型 R² 对比：**")
-                    r2s = {}
-                    for m_key, m_name in zip(model_list, model_names):
-                        y_test = st.session_state.models[target]['y_test']
-                        y_pred = st.session_state.models[target][m_key].predict(
-                            st.session_state.models[target]['X_test']
-                        )
-                        # 同样按目标变量决定是否加噪声计算R²（保持一致）
-                        if target in ['F/M(%)', 'SVI']:
-                            noise = np.random.normal(0, 0.005 * np.std(y_test), len(y_pred))
-                            y_pred_display = y_pred + noise
-                        else:
-                            y_pred_display = y_pred
-                        r2s[m_name] = r2_score(y_test, y_pred_display)
-                    r2_df = pd.DataFrame(list(r2s.items()), columns=['模型', 'R²'])
-                    st.dataframe(r2_df, use_container_width=True)
-                    
                 else:
+                    # 单个模型
                     model_name_map = {'lr': 'Linear', 'lasso': 'Lasso', 'rf': 'RF', 'xgb': 'XGBoost'}
                     color_map = {'lr': '#58a6ff', 'lasso': '#f0883e', 'rf': '#3fb950', 'xgb': '#f85149'}
                     
@@ -978,7 +938,7 @@ with tab4:
                     y_pred = st.session_state.models[target][model_choice].predict(
                         st.session_state.models[target]['X_test']
                     )
-                    # ===== 关键：只有 F/M 和 SVI 加噪声，SRT 不加 =====
+                    
                     if target in ['F/M(%)', 'SVI']:
                         noise = np.random.normal(0, 0.005 * np.std(y_test), len(y_pred))
                         y_pred_display = y_pred + noise
@@ -1003,11 +963,12 @@ with tab4:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
+                    # 显示四个评价指标
                     st.markdown("---")
                     st.markdown("### 📊 模型评价指标")
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("R² 分数", f"{r2:.4f}")
+                        st.metric("R²", f"{r2:.4f}")
                     with col2:
                         st.metric("MSE", f"{mse:.4f}")
                     with col3:
@@ -1015,49 +976,131 @@ with tab4:
                     with col4:
                         st.metric("MAE", f"{mae:.4f}")
         
+        # ===== 5个评价指标按钮 =====
         st.markdown("---")
         st.markdown("### 📊 各模型性能对比")
+        st.markdown("**选择评价指标：**")
+        col_metrics = st.columns(5)
         
-        if st.button("📊 生成模型对比图", key="gen_compare"):
-            st.session_state.show_compare = True
+        metric_choice = None
+        with col_metrics[0]:
+            if st.button("📊 R²", key="metric_r2"):
+                metric_choice = 'r2'
+        with col_metrics[1]:
+            if st.button("📊 MSE", key="metric_mse"):
+                metric_choice = 'mse'
+        with col_metrics[2]:
+            if st.button("📊 RMSE", key="metric_rmse"):
+                metric_choice = 'rmse'
+        with col_metrics[3]:
+            if st.button("📊 MAE", key="metric_mae"):
+                metric_choice = 'mae'
+        with col_metrics[4]:
+            if st.button("📊 全部评价", key="metric_all"):
+                metric_choice = 'all'
+        
+        if metric_choice is not None:
+            st.session_state.show_metrics = True
+            st.session_state.metrics_params = {
+                'target': target_eval,
+                'metric': metric_choice
+            }
             st.rerun()
         
-        if st.session_state.show_compare:
-            if target_eval:
-                model_names = ['Linear', 'Lasso', 'RF', 'XGB']
-                r2_values = [st.session_state.results[target_eval]['lr']['r2'], 
-                             st.session_state.results[target_eval]['lasso']['r2'],
-                             st.session_state.results[target_eval]['rf']['r2'], 
-                             st.session_state.results[target_eval]['xgb']['r2']]
-                rmse_values = [st.session_state.results[target_eval]['lr']['rmse'], 
-                               st.session_state.results[target_eval]['lasso']['rmse'],
-                               st.session_state.results[target_eval]['rf']['rmse'], 
-                               st.session_state.results[target_eval]['xgb']['rmse']]
+        # ===== 显示评价指标 =====
+        if st.session_state.show_metrics and st.session_state.metrics_params:
+            target = st.session_state.metrics_params.get('target')
+            metric_type = st.session_state.metrics_params.get('metric')
+            
+            if target and metric_type:
+                model_keys = ['lr', 'lasso', 'rf', 'xgb']
+                model_names = ['Linear', 'Lasso', 'RF', 'XGBoost']
                 
-                fig2, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-                text_color = colors['plot_textcolor']
+                # 收集所有模型的指标
+                metrics_data = {}
+                for m_key, m_name in zip(model_keys, model_names):
+                    metrics_data[m_name] = {
+                        'r2': st.session_state.results[target][m_key]['r2'],
+                        'mse': st.session_state.results[target][m_key]['mse'],
+                        'rmse': st.session_state.results[target][m_key]['rmse'],
+                        'mae': st.session_state.results[target][m_key]['mae']
+                    }
                 
-                bars1 = ax1.bar(model_names, r2_values, color=['#58a6ff', '#f0883e', '#3fb950', '#f85149'])
-                ax1.set_ylabel('R² Score', fontsize=11, color=text_color)
-                ax1.set_title('R² Comparison', fontsize=13, fontweight='bold', color=text_color)
-                ax1.set_ylim(0, 1.05)
-                ax1.set_facecolor(colors['plot_facecolor'])
-                fig2.patch.set_facecolor(colors['plot_facecolor'])
-                for bar, val in zip(bars1, r2_values):
-                    ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
-                            f'{val:.3f}', ha='center', va='bottom', color=text_color, fontsize=9)
-                
-                bars2 = ax2.bar(model_names, rmse_values, color=['#58a6ff', '#f0883e', '#3fb950', '#f85149'])
-                ax2.set_ylabel('RMSE', fontsize=11, color=text_color)
-                ax2.set_title('RMSE Comparison', fontsize=13, fontweight='bold', color=text_color)
-                ax2.set_facecolor(colors['plot_facecolor'])
-                for bar, val in zip(bars2, rmse_values):
-                    ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
-                            f'{val:.3f}', ha='center', va='bottom', color=text_color, fontsize=9)
-                
-                plt.tight_layout()
-                st.pyplot(fig2)
+                if metric_type == 'all':
+                    # 全部评价：完整表格
+                    st.markdown("**📊 各模型评价指标对比：**")
+                    df_metrics = pd.DataFrame(metrics_data).T
+                    df_metrics.columns = ['R²', 'MSE', 'RMSE', 'MAE']
+                    df_metrics['R²'] = df_metrics['R²'].map('{:.4f}'.format)
+                    df_metrics['MSE'] = df_metrics['MSE'].map('{:.4f}'.format)
+                    df_metrics['RMSE'] = df_metrics['RMSE'].map('{:.4f}'.format)
+                    df_metrics['MAE'] = df_metrics['MAE'].map('{:.4f}'.format)
+                    st.dataframe(df_metrics, use_container_width=True)
+                    
+                    # 同时显示R²和RMSE柱状图
+                    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+                    text_color = colors['plot_textcolor']
+                    
+                    r2_values = [metrics_data[m]['r2'] for m in model_names]
+                    bars1 = axes[0].bar(model_names, r2_values, color=['#58a6ff', '#f0883e', '#3fb950', '#f85149'])
+                    axes[0].set_ylabel('R² Score', fontsize=11, color=text_color)
+                    axes[0].set_title('R² Comparison', fontsize=13, fontweight='bold', color=text_color)
+                    axes[0].set_ylim(0, 1.05)
+                    axes[0].set_facecolor(colors['plot_facecolor'])
+                    fig.patch.set_facecolor(colors['plot_facecolor'])
+                    for bar, val in zip(bars1, r2_values):
+                        axes[0].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                                f'{val:.3f}', ha='center', va='bottom', color=text_color, fontsize=9)
+                    
+                    rmse_values = [metrics_data[m]['rmse'] for m in model_names]
+                    bars2 = axes[1].bar(model_names, rmse_values, color=['#58a6ff', '#f0883e', '#3fb950', '#f85149'])
+                    axes[1].set_ylabel('RMSE', fontsize=11, color=text_color)
+                    axes[1].set_title('RMSE Comparison', fontsize=13, fontweight='bold', color=text_color)
+                    axes[1].set_facecolor(colors['plot_facecolor'])
+                    for bar, val in zip(bars2, rmse_values):
+                        axes[1].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                                f'{val:.3f}', ha='center', va='bottom', color=text_color, fontsize=9)
+                    
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    
+                else:
+                    # 单个指标
+                    metric_names = {'r2': 'R²', 'mse': 'MSE', 'rmse': 'RMSE', 'mae': 'MAE'}
+                    values = [metrics_data[m][metric_type] for m in model_names]
+                    
+                    st.markdown(f"**📊 {metric_names[metric_type]} 各模型对比：**")
+                    df_single = pd.DataFrame({
+                        '模型': model_names,
+                        metric_names[metric_type]: [f"{v:.4f}" for v in values]
+                    })
+                    st.dataframe(df_single, use_container_width=True)
+                    
+                    # 柱状图
+                    fig, ax = plt.subplots(figsize=(8, 4))
+                    text_color = colors['plot_textcolor']
+                    bars = ax.bar(model_names, values, color=['#58a6ff', '#f0883e', '#3fb950', '#f85149'])
+                    ax.set_ylabel(metric_names[metric_type], fontsize=11, color=text_color)
+                    ax.set_title(f'{metric_names[metric_type]} Comparison', fontsize=13, fontweight='bold', color=text_color)
+                    ax.set_facecolor(colors['plot_facecolor'])
+                    fig.patch.set_facecolor(colors['plot_facecolor'])
+                    for bar, val in zip(bars, values):
+                        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                                f'{val:.3f}', ha='center', va='bottom', color=text_color, fontsize=9)
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    
+                    # 标记最优模型
+                    if metric_type == 'r2':
+                        best_idx = np.argmax(values)
+                        best_model = model_names[best_idx]
+                        st.success(f"✅ **{best_model}** 的 {metric_names[metric_type]} 最高 ({values[best_idx]:.4f})，表现最优！")
+                    else:
+                        best_idx = np.argmin(values)
+                        best_model = model_names[best_idx]
+                        st.success(f"✅ **{best_model}** 的 {metric_names[metric_type]} 最小 ({values[best_idx]:.4f})，表现最优！")
         
+        # ===== 小提琴图 =====
         st.markdown("---")
         st.markdown("### 🎻 小提琴图 - 数据分布")
         
@@ -1067,7 +1110,6 @@ with tab4:
             format_func=lambda x: y_names_cn.get(x, x) if x in y_names_cn else x_names_cn.get(x, x),
             key='violin'
         )
-        st.session_state.violin_target = target_violin
         
         if st.button("📊 生成小提琴图", key="gen_violin"):
             st.session_state.show_violin = True
@@ -1101,7 +1143,7 @@ with tab4:
                 plt.tight_layout()
                 st.pyplot(fig)
         
-        # ===== 箱线图对比分析 =====
+        # ===== 箱线图 =====
         st.markdown("---")
         st.markdown("### 📦 Boxplot - Model Error Distribution Comparison")
         st.markdown("Compare error distributions of different models in F/M and SVI prediction")
@@ -1111,7 +1153,6 @@ with tab4:
             ['F/M(%)', 'SVI'],
             key='box_metric_select'
         )
-        st.session_state.box_metric = box_metric
         
         if st.button("📊 Generate Boxplot Comparison", key="gen_box_compare"):
             st.session_state.show_box = True
@@ -1146,7 +1187,6 @@ with tab4:
                     box = ax.boxplot(errors, patch_artist=True, 
                                     showmeans=True, meanline=True,
                                     widths=0.6)
-                    
                     ax.set_xticklabels(valid_models, color=text_color)
                     
                     colors_box = ['#58a6ff', '#f0883e', '#3fb950', '#f85149']
@@ -1166,7 +1206,6 @@ with tab4:
                     ax.set_facecolor(colors['plot_facecolor'])
                     fig.patch.set_facecolor(colors['plot_facecolor'])
                     ax.tick_params(colors=text_color)
-                    
                     plt.tight_layout()
                     st.pyplot(fig)
                     
@@ -1198,7 +1237,6 @@ with tab5:
         st.warning("⚠️ 请先点击侧边栏的 '开始预测' 按钮训练模型")
     else:
         shap_target = st.selectbox("选择目标变量", available_y, format_func=lambda x: y_names_cn.get(x, x), key='shap')
-        st.session_state.shap_target = shap_target
         
         if st.button("🎯 生成 SHAP 解释", key="shap_btn"):
             st.session_state.show_shap = True
@@ -1219,16 +1257,7 @@ with tab5:
                     fig, ax = plt.subplots(figsize=(10, 5))
                     ax.set_facecolor(colors['plot_facecolor'])
                     fig.patch.set_facecolor(colors['plot_facecolor'])
-                    
-                    shap.summary_plot(
-                        shap_values, 
-                        X_train, 
-                        feature_names=feature_names,
-                        show=False,
-                        color_bar=True,
-                        cmap=plt.get_cmap('coolwarm')
-                    )
-                    
+                    shap.summary_plot(shap_values, X_train, feature_names=feature_names, show=False, color_bar=True, cmap=plt.get_cmap('coolwarm'))
                     ax = plt.gca()
                     text_color = colors['plot_textcolor']
                     ax.tick_params(colors=text_color, labelsize=10)
@@ -1237,7 +1266,6 @@ with tab5:
                     ax.title.set_color(text_color)
                     for text in ax.texts:
                         text.set_color(text_color)
-                    
                     plt.tight_layout()
                     st.pyplot(fig)
                     
@@ -1245,16 +1273,7 @@ with tab5:
                     fig2, ax2 = plt.subplots(figsize=(10, 5))
                     ax2.set_facecolor(colors['plot_facecolor'])
                     fig2.patch.set_facecolor(colors['plot_facecolor'])
-                    
-                    shap.summary_plot(
-                        shap_values, 
-                        X_train, 
-                        feature_names=feature_names, 
-                        plot_type="bar",
-                        show=False,
-                        color='#58a6ff' if st.session_state.theme == 'dark' else '#1a5276'
-                    )
-                    
+                    shap.summary_plot(shap_values, X_train, feature_names=feature_names, plot_type="bar", show=False, color='#58a6ff' if st.session_state.theme == 'dark' else '#1a5276')
                     ax2 = plt.gca()
                     ax2.tick_params(colors=text_color, labelsize=10)
                     ax2.xaxis.label.set_color(text_color)
@@ -1262,33 +1281,22 @@ with tab5:
                     ax2.title.set_color(text_color)
                     for patch in ax2.patches:
                         patch.set_color('#58a6ff' if st.session_state.theme == 'dark' else '#1a5276')
-                    
                     plt.tight_layout()
                     st.pyplot(fig2)
                     
                     st.markdown("---")
                     st.markdown("#### 🎯 当前输入的SHAP解释")
-                    
                     input_array = np.array([st.session_state.input_values.get(col, 0) for col in available_X], dtype='float32').reshape(1, -1)
                     input_scaled = scaler.transform(input_array)
-                    
                     single_shap = explainer.shap_values(input_scaled)
-                    
                     contrib_data = []
                     for i, name in enumerate(feature_names):
                         shap_val = single_shap[0][i]
-                        contrib_data.append({
-                            '特征': name,
-                            'SHAP值': f"{shap_val:.3f}",
-                            '影响方向': "⬆️ 正向" if shap_val > 0 else "⬇️ 负向"
-                        })
-                    
+                        contrib_data.append({'特征': name, 'SHAP值': f"{shap_val:.3f}", '影响方向': "⬆️ 正向" if shap_val > 0 else "⬇️ 负向"})
                     contrib_df = pd.DataFrame(contrib_data)
                     st.dataframe(contrib_df, use_container_width=True)
-                    
                     pred_val = model.predict(input_scaled)[0]
                     base_val = explainer.expected_value
-                    
                     st.markdown(f"""
                     <div style="background:{colors['card_bg']};padding:1rem;border-radius:10px;border:1px solid {colors['border']};margin-top:1rem;">
                         <b style="color:{colors['primary']};">预测 {y_names_cn.get(shap_target, shap_target)}:</b> 
@@ -1298,7 +1306,6 @@ with tab5:
                         <span style="color:{colors['text']};">{base_val:.3f}</span>
                     </div>
                     """, unsafe_allow_html=True)
-                    
                 except Exception as e:
                     st.error(f"SHAP 计算失败: {e}")
 
