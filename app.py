@@ -101,53 +101,6 @@ if 'box_params' not in st.session_state:
 if 'shap_params' not in st.session_state:
     st.session_state.shap_params = {}
 
-# ============ 图片保存函数 ============
-def save_matplotlib_fig(fig, filename, dpi=150):
-    """将matplotlib图片保存为PNG并返回BytesIO对象"""
-    buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', facecolor=fig.get_facecolor())
-    buf.seek(0)
-    return buf
-
-def save_plotly_fig(fig, filename, width=800, height=500):
-    """将plotly图片保存为PNG并返回BytesIO对象"""
-    img_bytes = fig.to_image(format="png", width=width, height=height)
-    buf = io.BytesIO(img_bytes)
-    buf.seek(0)
-    return buf
-
-def download_button_light_yellow(label, data, filename, mime="image/png", key=None):
-    """创建淡黄色下载按钮（自定义样式）"""
-    # 使用自定义CSS让按钮变成淡黄色
-    st.markdown(f"""
-    <style>
-    div[data-testid="stDownloadButton"] button {{
-        background-color: #f5e6a3 !important;
-        color: #1a1a2e !important;
-        border: 2px solid #e8d5a0 !important;
-        border-radius: 8px !important;
-        font-weight: 600 !important;
-        padding: 0.4rem 1.2rem !important;
-        font-size: 0.85rem !important;
-        transition: all 0.3s ease !important;
-    }}
-    div[data-testid="stDownloadButton"] button:hover {{
-        background-color: #ecd78a !important;
-        transform: translateY(-2px) !important;
-        box-shadow: 0 4px 12px rgba(245, 230, 163, 0.5) !important;
-    }}
-    </style>
-    """, unsafe_allow_html=True)
-    
-    return st.download_button(
-        label=label,
-        data=data,
-        file_name=filename,
-        mime=mime,
-        key=key,
-        use_container_width=False
-    )
-
 # ============ 主题配色 ============
 def get_theme_colors(theme):
     if theme == 'dark':
@@ -729,7 +682,7 @@ with tab1:
             title='SRT vs F/M 关系图',
             xaxis_title='SRT (天)',
             yaxis_title='F/M (%)',
-            height=400,
+            height=350,
             hovermode='closest',
             template='plotly_dark' if st.session_state.theme == 'dark' else 'plotly_white',
             paper_bgcolor='rgba(0,0,0,0)',
@@ -737,12 +690,6 @@ with tab1:
             font=dict(color=colors['text_color'])
         )
         st.plotly_chart(fig, use_container_width=True)
-        
-        # 保存图片按钮
-        col_left, col_right = st.columns([6, 1])
-        with col_right:
-            buf = save_plotly_fig(fig, "SRT_vs_FM.png", width=800, height=500)
-            download_button_light_yellow("📥 保存", buf, "SRT_vs_FM.png", key="save_srt_vs_fm")
         
         st.markdown("---")
         st.markdown("### 💡 优化建议")
@@ -810,7 +757,7 @@ with tab2:
                     title=f'{title} 时间序列趋势',
                     xaxis_title='日期',
                     yaxis_title=title,
-                    height=400,
+                    height=350,
                     hovermode='x unified',
                     template='plotly_dark' if st.session_state.theme == 'dark' else 'plotly_white',
                     paper_bgcolor='rgba(0,0,0,0)',
@@ -818,12 +765,6 @@ with tab2:
                     font=dict(color=colors['text_color'])
                 )
                 st.plotly_chart(fig, use_container_width=True)
-                
-                # 保存图片按钮
-                col_left, col_right = st.columns([6, 1])
-                with col_right:
-                    buf = save_plotly_fig(fig, f"{title}_timeseries.png", width=800, height=500)
-                    download_button_light_yellow("📥 保存", buf, f"{title}_timeseries.png", key="save_ts")
                 
                 col1, col2, col3 = st.columns(3)
                 with col1: st.metric("当前值", f"{values.iloc[-1]:.2f}")
@@ -861,26 +802,20 @@ with tab3:
                 sorted_names = [x_names_en.get(available_X[i], available_X[i]) for i in sorted_idx]
                 sorted_values = importance[sorted_idx]
                 
-                fig, ax = plt.subplots(figsize=(10, 5))
+                fig, ax = plt.subplots(figsize=(10, 4))
                 bar_color = '#58a6ff' if st.session_state.theme == 'dark' else '#1a5276'
                 text_color = colors['plot_textcolor']
                 
                 bars = ax.barh(sorted_names, sorted_values, color=bar_color)
-                ax.set_xlabel('Feature Importance', fontsize=12, fontweight='bold', color=text_color)
-                ax.set_title(f'{model_type} - {y_names_en.get(target, target)} Feature Importance', fontsize=14, fontweight='bold', color=text_color)
+                ax.set_xlabel('Feature Importance', fontsize=11, fontweight='bold', color=text_color)
+                ax.set_title(f'{model_type} - {y_names_en.get(target, target)} Feature Importance', fontsize=13, fontweight='bold', color=text_color)
                 ax.invert_yaxis()
                 ax.set_facecolor(colors['plot_facecolor'])
                 fig.patch.set_facecolor(colors['plot_facecolor'])
                 for i, v in enumerate(sorted_values):
-                    ax.text(v + 0.005, i, f'{v:.3f}', va='center', color=text_color, fontsize=10, fontweight='bold')
+                    ax.text(v + 0.005, i, f'{v:.3f}', va='center', color=text_color, fontsize=9, fontweight='bold')
                 plt.tight_layout()
                 st.pyplot(fig)
-                
-                # 保存图片按钮
-                col_left, col_right = st.columns([6, 1])
-                with col_right:
-                    buf = save_matplotlib_fig(fig, "feature_importance.png", dpi=150)
-                    download_button_light_yellow("📥 保存", buf, "feature_importance.png", key="save_importance")
         
         st.markdown("---")
         st.markdown("### 🔥 特征相关性热力图")
@@ -895,7 +830,7 @@ with tab3:
             rename_map = {**x_names_en, **y_names_en}
             corr_matrix = corr_matrix.rename(columns=rename_map, index=rename_map)
             
-            fig, ax = plt.subplots(figsize=(11, 8))
+            fig, ax = plt.subplots(figsize=(10, 7))
             sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', center=0,
                        fmt='.2f', square=True, linewidths=0.5, ax=ax,
                        cbar_kws={'shrink': 0.8})
@@ -905,12 +840,6 @@ with tab3:
             fig.patch.set_facecolor(colors['plot_facecolor'])
             plt.tight_layout()
             st.pyplot(fig)
-            
-            # 保存图片按钮
-            col_left, col_right = st.columns([6, 1])
-            with col_right:
-                buf = save_matplotlib_fig(fig, "heatmap.png", dpi=150)
-                download_button_light_yellow("📥 保存", buf, "heatmap.png", key="save_heatmap")
 
 # ===== Tab 4: 模型评价 =====
 with tab4:
@@ -926,6 +855,7 @@ with tab4:
             key='eval'
         )
         
+        # ===== 5个模型选择按钮 =====
         st.markdown("**选择模型：**")
         col_models = st.columns(5)
         
@@ -954,6 +884,7 @@ with tab4:
             }
             st.rerun()
         
+        # ===== 显示散点图 =====
         if st.session_state.show_scatter and st.session_state.scatter_params:
             target = st.session_state.scatter_params.get('target')
             model_choice = st.session_state.scatter_params.get('model')
@@ -966,6 +897,7 @@ with tab4:
                 colors_list = ['#58a6ff', '#f0883e', '#3fb950', '#f85149']
                 
                 if model_choice == 'all':
+                    # 2×2 子图
                     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
                     axes = axes.flatten()
                     
@@ -976,6 +908,7 @@ with tab4:
                             st.session_state.models[target]['X_test']
                         )
                         
+                        # 差异化噪声：F/M和SVI加，SRT不加
                         if target in ['F/M(%)', 'SVI']:
                             noise = np.random.normal(0, 0.005 * np.std(y_test), len(y_pred))
                             y_pred_display = y_pred + noise
@@ -996,13 +929,8 @@ with tab4:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    # 保存图片按钮
-                    col_left, col_right = st.columns([6, 1])
-                    with col_right:
-                        buf = save_matplotlib_fig(fig, "all_models_scatter.png", dpi=150)
-                        download_button_light_yellow("📥 保存", buf, "all_models_scatter.png", key="save_scatter_all")
-                    
                 else:
+                    # 单个模型
                     model_name_map = {'lr': 'Linear', 'lasso': 'Lasso', 'rf': 'RF', 'xgb': 'XGBoost'}
                     color_map = {'lr': '#58a6ff', 'lasso': '#f0883e', 'rf': '#3fb950', 'xgb': '#f85149'}
                     
@@ -1035,12 +963,7 @@ with tab4:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    # 保存图片按钮
-                    col_left, col_right = st.columns([6, 1])
-                    with col_right:
-                        buf = save_matplotlib_fig(fig, f"{model_name_map[model_choice]}_scatter.png", dpi=150)
-                        download_button_light_yellow("📥 保存", buf, f"{model_name_map[model_choice]}_scatter.png", key="save_scatter_single")
-                    
+                    # 显示四个评价指标
                     st.markdown("---")
                     st.markdown("### 📊 模型评价指标")
                     col1, col2, col3, col4 = st.columns(4)
@@ -1053,6 +976,7 @@ with tab4:
                     with col4:
                         st.metric("MAE", f"{mae:.4f}")
         
+        # ===== 5个评价指标按钮 =====
         st.markdown("---")
         st.markdown("### 📊 各模型性能对比")
         st.markdown("**选择评价指标：**")
@@ -1083,6 +1007,7 @@ with tab4:
             }
             st.rerun()
         
+        # ===== 显示评价指标 =====
         if st.session_state.show_metrics and st.session_state.metrics_params:
             target = st.session_state.metrics_params.get('target')
             metric_type = st.session_state.metrics_params.get('metric')
@@ -1091,6 +1016,7 @@ with tab4:
                 model_keys = ['lr', 'lasso', 'rf', 'xgb']
                 model_names = ['Linear', 'Lasso', 'RF', 'XGBoost']
                 
+                # 收集所有模型的指标
                 metrics_data = {}
                 for m_key, m_name in zip(model_keys, model_names):
                     metrics_data[m_name] = {
@@ -1101,6 +1027,7 @@ with tab4:
                     }
                 
                 if metric_type == 'all':
+                    # 全部评价：完整表格
                     st.markdown("**📊 各模型评价指标对比：**")
                     df_metrics = pd.DataFrame(metrics_data).T
                     df_metrics.columns = ['R²', 'MSE', 'RMSE', 'MAE']
@@ -1110,6 +1037,7 @@ with tab4:
                     df_metrics['MAE'] = df_metrics['MAE'].map('{:.4f}'.format)
                     st.dataframe(df_metrics, use_container_width=True)
                     
+                    # 同时显示R²和RMSE柱状图
                     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
                     text_color = colors['plot_textcolor']
                     
@@ -1136,13 +1064,8 @@ with tab4:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    # 保存图片按钮
-                    col_left, col_right = st.columns([6, 1])
-                    with col_right:
-                        buf = save_matplotlib_fig(fig, "metrics_comparison.png", dpi=150)
-                        download_button_light_yellow("📥 保存", buf, "metrics_comparison.png", key="save_metrics_all")
-                    
                 else:
+                    # 单个指标
                     metric_names = {'r2': 'R²', 'mse': 'MSE', 'rmse': 'RMSE', 'mae': 'MAE'}
                     values = [metrics_data[m][metric_type] for m in model_names]
                     
@@ -1153,6 +1076,7 @@ with tab4:
                     })
                     st.dataframe(df_single, use_container_width=True)
                     
+                    # 柱状图
                     fig, ax = plt.subplots(figsize=(8, 4))
                     text_color = colors['plot_textcolor']
                     bars = ax.bar(model_names, values, color=['#58a6ff', '#f0883e', '#3fb950', '#f85149'])
@@ -1166,12 +1090,7 @@ with tab4:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    # 保存图片按钮
-                    col_left, col_right = st.columns([6, 1])
-                    with col_right:
-                        buf = save_matplotlib_fig(fig, f"{metric_names[metric_type]}_comparison.png", dpi=150)
-                        download_button_light_yellow("📥 保存", buf, f"{metric_names[metric_type]}_comparison.png", key="save_metrics_single")
-                    
+                    # 标记最优模型
                     if metric_type == 'r2':
                         best_idx = np.argmax(values)
                         best_model = model_names[best_idx]
@@ -1181,6 +1100,7 @@ with tab4:
                         best_model = model_names[best_idx]
                         st.success(f"✅ **{best_model}** 的 {metric_names[metric_type]} 最小 ({values[best_idx]:.4f})，表现最优！")
         
+        # ===== 小提琴图 =====
         st.markdown("---")
         st.markdown("### 🎻 小提琴图 - 数据分布")
         
@@ -1222,13 +1142,8 @@ with tab4:
                 fig.patch.set_facecolor(colors['plot_facecolor'])
                 plt.tight_layout()
                 st.pyplot(fig)
-                
-                # 保存图片按钮
-                col_left, col_right = st.columns([6, 1])
-                with col_right:
-                    buf = save_matplotlib_fig(fig, f"{title}_violin.png", dpi=150)
-                    download_button_light_yellow("📥 保存", buf, f"{title}_violin.png", key="save_violin")
         
+        # ===== 箱线图 =====
         st.markdown("---")
         st.markdown("### 📦 Boxplot - Model Error Distribution Comparison")
         st.markdown("Compare error distributions of different models in F/M and SVI prediction")
@@ -1294,12 +1209,6 @@ with tab4:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    # 保存图片按钮
-                    col_left, col_right = st.columns([6, 1])
-                    with col_right:
-                        buf = save_matplotlib_fig(fig, f"{metric_display}_boxplot.png", dpi=150)
-                        download_button_light_yellow("📥 保存", buf, f"{metric_display}_boxplot.png", key="save_box")
-                    
                     st.markdown("**📊 Model Error Statistics:**")
                     stats_data = []
                     for i, (name, errors_data) in enumerate(zip(valid_models, errors)):
@@ -1360,12 +1269,6 @@ with tab5:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    # 保存图片按钮
-                    col_left, col_right = st.columns([6, 1])
-                    with col_right:
-                        buf = save_matplotlib_fig(fig, "shap_summary.png", dpi=150)
-                        download_button_light_yellow("📥 保存", buf, "shap_summary.png", key="save_shap1")
-                    
                     st.markdown("#### 📊 SHAP 特征重要性")
                     fig2, ax2 = plt.subplots(figsize=(10, 5))
                     ax2.set_facecolor(colors['plot_facecolor'])
@@ -1380,12 +1283,6 @@ with tab5:
                         patch.set_color('#58a6ff' if st.session_state.theme == 'dark' else '#1a5276')
                     plt.tight_layout()
                     st.pyplot(fig2)
-                    
-                    # 保存图片按钮
-                    col_left, col_right = st.columns([6, 1])
-                    with col_right:
-                        buf = save_matplotlib_fig(fig2, "shap_importance.png", dpi=150)
-                        download_button_light_yellow("📥 保存", buf, "shap_importance.png", key="save_shap2")
                     
                     st.markdown("---")
                     st.markdown("#### 🎯 当前输入的SHAP解释")
