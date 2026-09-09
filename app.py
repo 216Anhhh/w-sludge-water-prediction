@@ -40,56 +40,12 @@ import xgboost as xgb
 import plotly.graph_objects as go
 import shap
 
-# ============================
-# 内存监控函数（可选）
-import psutil
-import os
-
-def get_memory_usage():
-    try:
-        process = psutil.Process(os.getpid())
-        return process.memory_info().rss / 1024 / 1024
-    except:
-        return 0
-
-# ============================
 # Page config
 st.set_page_config(
     page_title="污水处理智能分析平台",
     page_icon="💧",
     layout="wide"
 )
-
-# ============ 清理数据函数 ============
-def clear_session_data():
-    """清理所有临时数据，释放内存（保留模型）"""
-    # 清空预测结果
-    st.session_state.predicted = False
-    st.session_state.pred_values = {}
-    st.session_state.input_values = {}
-    # 清空所有图表状态
-    st.session_state.show_ts = False
-    st.session_state.show_importance = False
-    st.session_state.show_heatmap = False
-    st.session_state.show_scatter = False
-    st.session_state.show_metrics = False
-    st.session_state.show_violin = False
-    st.session_state.show_box = False
-    st.session_state.show_shap = False
-    # 清空图表参数
-    st.session_state.scatter_params = {}
-    st.session_state.metrics_params = {}
-    st.session_state.ts_params = {}
-    st.session_state.importance_params = {}
-    st.session_state.violin_params = {}
-    st.session_state.box_params = {}
-    st.session_state.shap_params = {}
-    # 清空上传的数据（恢复到默认数据）
-    st.session_state.df_loaded = None
-    st.session_state.data_source = 'default'
-    # 注：保留模型（model_trained = True），避免重新训练耗时
-    st.rerun()
-
 
 # ============ 初始化session_state ============
 if 'df_loaded' not in st.session_state:
@@ -144,65 +100,6 @@ if 'box_params' not in st.session_state:
     st.session_state.box_params = {}
 if 'shap_params' not in st.session_state:
     st.session_state.shap_params = {}
-
-# ============ 图片保存函数 ============
-def save_matplotlib_fig(fig, filename, dpi=150):
-    """将matplotlib图片保存为PNG并返回BytesIO对象"""
-    buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', facecolor=fig.get_facecolor())
-    buf.seek(0)
-    return buf
-
-def save_plotly_fig(fig, filename, width=800, height=500):
-    """将plotly图片保存为PNG并返回BytesIO对象"""
-    try:
-        img_bytes = fig.to_image(format="png", width=width, height=height)
-        buf = io.BytesIO(img_bytes)
-        buf.seek(0)
-        return buf
-    except Exception as e:
-        st.warning("⚠️ 图片保存功能需要 kaleido 库支持，请安装或使用其他方式。")
-        return None
-
-def download_button_light_yellow(label, data, filename, mime="image/png", key=None):
-    """创建淡黄色下载按钮（自定义样式）"""
-    if data is None:
-        return
-    st.markdown(f"""
-    <style>
-    div[data-testid="stDownloadButton"] button {{
-        background-color: #f5e6a3 !important;
-        color: #1a1a2e !important;
-        border: 2px solid #e8d5a0 !important;
-        border-radius: 8px !important;
-        font-weight: 600 !important;
-        padding: 0.4rem 1.2rem !important;
-        font-size: 0.85rem !important;
-        transition: all 0.3s ease !important;
-    }}
-    div[data-testid="stDownloadButton"] button:hover {{
-        background-color: #ecd78a !important;
-        transform: translateY(-2px) !important;
-        box-shadow: 0 4px 12px rgba(245, 230, 163, 0.5) !important;
-    }}
-    </style>
-    """, unsafe_allow_html=True)
-    
-    return st.download_button(
-        label=label,
-        data=data,
-        file_name=filename,
-        mime=mime,
-        key=key,
-        use_container_width=False
-    )
-
-
-def clear_button():
-    """显示清理数据的按钮"""
-    if st.button("🗑️ 清理数据", use_container_width=True, key="clear_btn"):
-        clear_session_data()
-
 
 # ============ 主题配色 ============
 def get_theme_colors(theme):
@@ -551,7 +448,6 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # ===== 开始预测按钮 =====
     if st.button("🚀 开始预测", use_container_width=True):
         st.session_state.predicted = True
         st.session_state.pred_values = {}
@@ -569,10 +465,6 @@ with st.sidebar:
             pred_val = predict_value(input_values, model)
             st.session_state.pred_values[y_col] = pred_val
         st.rerun()
-    
-    # ===== 清理数据按钮（侧边栏） =====
-    st.markdown("---")
-    clear_button()
     
     st.markdown("---")
     st.markdown("## 🎨 主题设置")
@@ -618,11 +510,6 @@ with st.sidebar:
         st.info("📌 使用: 上传的数据")
     else:
         st.info("📌 使用: 默认数据")
-    
-    # ===== 内存监控 =====
-    mem = get_memory_usage()
-    if mem > 0:
-        st.markdown(f"<p style='text-align:center;color:{colors['text_secondary']};font-size:0.7rem;'>💾 内存: {mem:.0f} MB</p>", unsafe_allow_html=True)
 
 # ============ 自定义正常范围 ============
 FM_MIN, FM_MAX = 20.0, 40.0
@@ -691,9 +578,6 @@ if st.session_state.predicted and st.session_state.pred_values:
     
     st.markdown("---")
     st.markdown("### 💾 导出预测结果")
-    
-    # 清理按钮（导出预测结果上方）
-    clear_button()
     
     export_data = {'输入参数': [], '数值': []}
     for col, val in input_vals.items():
@@ -798,7 +682,7 @@ with tab1:
             title='SRT vs F/M 关系图',
             xaxis_title='SRT (天)',
             yaxis_title='F/M (%)',
-            height=400,
+            height=350,
             hovermode='closest',
             template='plotly_dark' if st.session_state.theme == 'dark' else 'plotly_white',
             paper_bgcolor='rgba(0,0,0,0)',
@@ -806,14 +690,6 @@ with tab1:
             font=dict(color=colors['text_color'])
         )
         st.plotly_chart(fig, use_container_width=True)
-        
-        col_left, col_right = st.columns([6, 1])
-        with col_right:
-            # 清理按钮 + 保存按钮
-            if st.button("🗑️", key="clear_tab1", help="清理数据"):
-                clear_session_data()
-            buf = save_plotly_fig(fig, "SRT_vs_FM.png", width=800, height=500)
-            download_button_light_yellow("📥 保存", buf, "SRT_vs_FM.png", key="save_srt_vs_fm")
         
         st.markdown("---")
         st.markdown("### 💡 优化建议")
@@ -839,8 +715,6 @@ with tab1:
 # ===== Tab 2: 时间序列 =====
 with tab2:
     st.markdown("### 📈 历史趋势分析")
-    
-    # ---- 原有历史趋势图 ----
     if date_col:
         time_target = st.selectbox(
             "选择指标查看时间序列",
@@ -883,7 +757,7 @@ with tab2:
                     title=f'{title} 时间序列趋势',
                     xaxis_title='日期',
                     yaxis_title=title,
-                    height=400,
+                    height=350,
                     hovermode='x unified',
                     template='plotly_dark' if st.session_state.theme == 'dark' else 'plotly_white',
                     paper_bgcolor='rgba(0,0,0,0)',
@@ -892,193 +766,12 @@ with tab2:
                 )
                 st.plotly_chart(fig, use_container_width=True)
                 
-                col_left, col_right = st.columns([6, 1])
-                with col_right:
-                    if st.button("🗑️", key="clear_tab2", help="清理数据"):
-                        clear_session_data()
-                    buf = save_plotly_fig(fig, f"{title}_timeseries.png", width=800, height=500)
-                    download_button_light_yellow("📥 保存", buf, f"{title}_timeseries.png", key="save_ts")
-                
                 col1, col2, col3 = st.columns(3)
                 with col1: st.metric("当前值", f"{values.iloc[-1]:.2f}")
                 with col2: st.metric("平均值", f"{values.mean():.2f}")
                 with col3: st.metric("变化率", f"{((values.iloc[-1] - values.iloc[0]) / values.iloc[0] * 100):.2f}%")
     else:
         st.warning("⚠️ 数据中未找到日期列")
-    
-    # ---- 新增：导入连续数据并预测未来 ----
-    st.markdown("---")
-    st.markdown("### 📥 导入连续数据并预测未来")
-    st.markdown("上传包含日期和进水参数的Excel文件，系统将基于最后一条数据预测下一时刻的目标变量，并评估风险。")
-    
-    uploaded_future = st.file_uploader(
-        "选择Excel文件（含日期列）",
-        type=['xlsx', 'xls'],
-        key="future_upload",
-        help="文件需包含日期列和进水参数列（Qoutm3/d, BOD5, CODcr, SS, NH3-N, TP, TN, Tin℃）"
-    )
-    
-    if uploaded_future is not None:
-        try:
-            future_df = pd.read_excel(uploaded_future, sheet_name=0)
-            # 检查必要列
-            required_cols = ['日期'] + X_columns
-            missing_cols = [col for col in required_cols if col not in future_df.columns]
-            if missing_cols:
-                st.warning(f"⚠️ 缺少列: {missing_cols[:3]}... 请检查文件格式")
-            else:
-                # 确保日期列是datetime类型
-                future_df['日期'] = pd.to_datetime(future_df['日期'])
-                future_df = future_df.sort_values('日期').reset_index(drop=True)
-                
-                st.success(f"✅ 成功导入 {len(future_df)} 条数据，时间范围：{future_df['日期'].min().strftime('%Y-%m-%d %H:%M')} 至 {future_df['日期'].max().strftime('%Y-%m-%d %H:%M')}")
-                
-                # 数据预览
-                st.markdown("**数据预览（前5行）：**")
-                st.dataframe(future_df.head(5), use_container_width=True)
-                st.markdown("**数据预览（后5行）：**")
-                st.dataframe(future_df.tail(5), use_container_width=True)
-                
-                # 检查模型是否已训练
-                if not st.session_state.model_trained:
-                    st.warning("⚠️ 请先点击侧边栏的 '开始预测' 训练模型")
-                else:
-                    # 获取最后一条数据作为预测输入
-                    last_row = future_df.iloc[-1]
-                    last_date = last_row['日期']
-                    input_dict = {col: last_row[col] for col in available_X}
-                    
-                    # 预测
-                    pred_fm = predict_value(input_dict, st.session_state.models['F/M(%)']['xgb'])
-                    pred_svi = predict_value(input_dict, st.session_state.models['SVI']['xgb'])
-                    pred_srt = predict_value(input_dict, st.session_state.models['SRT']['xgb'])
-                    
-                    # 趋势分析（基于最近5个点）
-                    trend_window = min(5, len(future_df))
-                    recent_fm = future_df['F/M(%)'].iloc[-trend_window:].values if 'F/M(%)' in future_df.columns else None
-                    recent_svi = future_df['SVI'].iloc[-trend_window:].values if 'SVI' in future_df.columns else None
-                    recent_srt = future_df['SRT'].iloc[-trend_window:].values if 'SRT' in future_df.columns else None
-                    
-                    def calc_trend(series):
-                        if series is None or len(series) < 2:
-                            return "数据不足"
-                        slope = np.polyfit(range(len(series)), series, 1)[0]
-                        if slope > 0.01:
-                            return "上升 📈"
-                        elif slope < -0.01:
-                            return "下降 📉"
-                        else:
-                            return "平稳 ➡️"
-                    
-                    fm_trend = calc_trend(recent_fm) if recent_fm is not None else "无历史"
-                    svi_trend = calc_trend(recent_svi) if recent_svi is not None else "无历史"
-                    srt_trend = calc_trend(recent_srt) if recent_srt is not None else "无历史"
-                    
-                    # 显示预测结果
-                    st.markdown("---")
-                    st.markdown(f"**📊 基于 {last_date.strftime('%Y-%m-%d %H:%M')} 数据的下一时刻预测：**")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("预测 F/M", f"{pred_fm:.2f}%", delta=fm_trend)
-                    with col2:
-                        st.metric("预测 SVI", f"{pred_svi:.2f}", delta=svi_trend)
-                    with col3:
-                        st.metric("预测 SRT", f"{pred_srt:.2f} 天", delta=srt_trend)
-                    
-                    # 风险评估
-                    st.markdown("---")
-                    st.markdown("### ⚠️ 风险评估与优化建议")
-                    
-                    risk_levels = []
-                    suggestions = []
-                    
-                    # F/M 风险评估
-                    if pred_fm > FM_MAX:
-                        risk_levels.append("🔴 F/M偏高")
-                        suggestions.append("建议减少进水量或增加MLSS浓度以降低有机负荷")
-                    elif pred_fm < FM_MIN:
-                        risk_levels.append("🔵 F/M偏低")
-                        suggestions.append("建议增加进水量或减少MLSS浓度以提高有机负荷")
-                    else:
-                        risk_levels.append("🟢 F/M正常")
-                    
-                    # SVI 风险评估
-                    if pred_svi > SVI_MAX:
-                        risk_levels.append("🔴 SVI偏高（污泥膨胀风险）")
-                        suggestions.append("建议增加曝气量或调整营养比，防止污泥膨胀")
-                    elif pred_svi < SVI_MIN:
-                        risk_levels.append("🔵 SVI偏低")
-                        suggestions.append("污泥沉降性能良好，维持当前运行参数")
-                    else:
-                        risk_levels.append("🟢 SVI正常")
-                    
-                    # SRT 风险评估
-                    if pred_srt > SRT_MAX:
-                        risk_levels.append("🔴 SRT偏高")
-                        suggestions.append("建议减少污泥回流量，适当排泥")
-                    elif pred_srt < SRT_MIN:
-                        risk_levels.append("🔵 SRT偏低")
-                        suggestions.append("建议增加污泥回流量")
-                    else:
-                        risk_levels.append("🟢 SRT正常")
-                    
-                    # 显示风险标签
-                    for r in risk_levels:
-                        st.markdown(f"- {r}")
-                    
-                    # 综合风险等级
-                    high_risks = [r for r in risk_levels if r.startswith("🔴")]
-                    if len(high_risks) >= 2:
-                        overall_risk = "🔴 高风险"
-                    elif len(high_risks) == 1:
-                        overall_risk = "🟡 中风险"
-                    else:
-                        overall_risk = "🟢 低风险"
-                    
-                    st.markdown(f"**综合风险等级：{overall_risk}**")
-                    
-                    if suggestions:
-                        st.markdown("**💡 优化建议：**")
-                        for s in suggestions:
-                            st.markdown(f"- {s}")
-                    else:
-                        st.success("✅ 所有指标正常，建议维持当前运行参数。")
-                    
-                    # 显示趋势分析
-                    st.markdown("---")
-                    st.markdown("**📈 近期趋势分析（最近5个点）：**")
-                    st.markdown(f"- F/M 趋势：{fm_trend}")
-                    st.markdown(f"- SVI 趋势：{svi_trend}")
-                    st.markdown(f"- SRT 趋势：{srt_trend}")
-                    
-                    # 导出预测结果
-                    st.markdown("---")
-                    st.markdown("**💾 导出预测结果**")
-                    
-                    # 清理按钮（导出上方）
-                    clear_button()
-                    
-                    export_future = pd.DataFrame({
-                        '时间': [last_date],
-                        '预测F/M(%)': [f"{pred_fm:.2f}"],
-                        '预测SVI': [f"{pred_svi:.2f}"],
-                        '预测SRT(天)': [f"{pred_srt:.2f}"],
-                        '风险等级': [overall_risk]
-                    })
-                    output_future = io.BytesIO()
-                    with pd.ExcelWriter(output_future, engine='openpyxl') as writer:
-                        export_future.to_excel(writer, sheet_name='未来预测', index=False)
-                        future_df.to_excel(writer, sheet_name='原始数据', index=False)
-                    st.download_button(
-                        label="📥 下载预测结果 (Excel)",
-                        data=output_future.getvalue(),
-                        file_name=f"未来预测_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key="download_future"
-                    )
-        except Exception as e:
-            st.error(f"❌ 文件读取失败: {str(e)}")
 
 # ===== Tab 3: 特征重要性 =====
 with tab3:
@@ -1109,27 +802,20 @@ with tab3:
                 sorted_names = [x_names_en.get(available_X[i], available_X[i]) for i in sorted_idx]
                 sorted_values = importance[sorted_idx]
                 
-                fig, ax = plt.subplots(figsize=(10, 5))
+                fig, ax = plt.subplots(figsize=(10, 4))
                 bar_color = '#58a6ff' if st.session_state.theme == 'dark' else '#1a5276'
                 text_color = colors['plot_textcolor']
                 
                 bars = ax.barh(sorted_names, sorted_values, color=bar_color)
-                ax.set_xlabel('Feature Importance', fontsize=12, fontweight='bold', color=text_color)
-                ax.set_title(f'{model_type} - {y_names_en.get(target, target)} Feature Importance', fontsize=14, fontweight='bold', color=text_color)
+                ax.set_xlabel('Feature Importance', fontsize=11, fontweight='bold', color=text_color)
+                ax.set_title(f'{model_type} - {y_names_en.get(target, target)} Feature Importance', fontsize=13, fontweight='bold', color=text_color)
                 ax.invert_yaxis()
                 ax.set_facecolor(colors['plot_facecolor'])
                 fig.patch.set_facecolor(colors['plot_facecolor'])
                 for i, v in enumerate(sorted_values):
-                    ax.text(v + 0.005, i, f'{v:.3f}', va='center', color=text_color, fontsize=10, fontweight='bold')
+                    ax.text(v + 0.005, i, f'{v:.3f}', va='center', color=text_color, fontsize=9, fontweight='bold')
                 plt.tight_layout()
                 st.pyplot(fig)
-                
-                col_left, col_right = st.columns([6, 1])
-                with col_right:
-                    if st.button("🗑️", key="clear_tab3", help="清理数据"):
-                        clear_session_data()
-                    buf = save_matplotlib_fig(fig, "feature_importance.png", dpi=150)
-                    download_button_light_yellow("📥 保存", buf, "feature_importance.png", key="save_importance")
         
         st.markdown("---")
         st.markdown("### 🔥 特征相关性热力图")
@@ -1144,7 +830,7 @@ with tab3:
             rename_map = {**x_names_en, **y_names_en}
             corr_matrix = corr_matrix.rename(columns=rename_map, index=rename_map)
             
-            fig, ax = plt.subplots(figsize=(11, 8))
+            fig, ax = plt.subplots(figsize=(10, 7))
             sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', center=0,
                        fmt='.2f', square=True, linewidths=0.5, ax=ax,
                        cbar_kws={'shrink': 0.8})
@@ -1154,13 +840,6 @@ with tab3:
             fig.patch.set_facecolor(colors['plot_facecolor'])
             plt.tight_layout()
             st.pyplot(fig)
-            
-            col_left, col_right = st.columns([6, 1])
-            with col_right:
-                if st.button("🗑️", key="clear_tab3_heat", help="清理数据"):
-                    clear_session_data()
-                buf = save_matplotlib_fig(fig, "heatmap.png", dpi=150)
-                download_button_light_yellow("📥 保存", buf, "heatmap.png", key="save_heatmap")
 
 # ===== Tab 4: 模型评价 =====
 with tab4:
@@ -1176,6 +855,7 @@ with tab4:
             key='eval'
         )
         
+        # ===== 5个模型选择按钮 =====
         st.markdown("**选择模型：**")
         col_models = st.columns(5)
         
@@ -1204,6 +884,7 @@ with tab4:
             }
             st.rerun()
         
+        # ===== 显示散点图 =====
         if st.session_state.show_scatter and st.session_state.scatter_params:
             target = st.session_state.scatter_params.get('target')
             model_choice = st.session_state.scatter_params.get('model')
@@ -1216,6 +897,7 @@ with tab4:
                 colors_list = ['#58a6ff', '#f0883e', '#3fb950', '#f85149']
                 
                 if model_choice == 'all':
+                    # 2×2 子图
                     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
                     axes = axes.flatten()
                     
@@ -1226,6 +908,7 @@ with tab4:
                             st.session_state.models[target]['X_test']
                         )
                         
+                        # 差异化噪声：F/M和SVI加，SRT不加
                         if target in ['F/M(%)', 'SVI']:
                             noise = np.random.normal(0, 0.005 * np.std(y_test), len(y_pred))
                             y_pred_display = y_pred + noise
@@ -1246,14 +929,8 @@ with tab4:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    col_left, col_right = st.columns([6, 1])
-                    with col_right:
-                        if st.button("🗑️", key="clear_tab4_all", help="清理数据"):
-                            clear_session_data()
-                        buf = save_matplotlib_fig(fig, "all_models_scatter.png", dpi=150)
-                        download_button_light_yellow("📥 保存", buf, "all_models_scatter.png", key="save_scatter_all")
-                    
                 else:
+                    # 单个模型
                     model_name_map = {'lr': 'Linear', 'lasso': 'Lasso', 'rf': 'RF', 'xgb': 'XGBoost'}
                     color_map = {'lr': '#58a6ff', 'lasso': '#f0883e', 'rf': '#3fb950', 'xgb': '#f85149'}
                     
@@ -1286,13 +963,7 @@ with tab4:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    col_left, col_right = st.columns([6, 1])
-                    with col_right:
-                        if st.button("🗑️", key="clear_tab4_single", help="清理数据"):
-                            clear_session_data()
-                        buf = save_matplotlib_fig(fig, f"{model_name_map[model_choice]}_scatter.png", dpi=150)
-                        download_button_light_yellow("📥 保存", buf, f"{model_name_map[model_choice]}_scatter.png", key="save_scatter_single")
-                    
+                    # 显示四个评价指标
                     st.markdown("---")
                     st.markdown("### 📊 模型评价指标")
                     col1, col2, col3, col4 = st.columns(4)
@@ -1305,6 +976,7 @@ with tab4:
                     with col4:
                         st.metric("MAE", f"{mae:.4f}")
         
+        # ===== 5个评价指标按钮 =====
         st.markdown("---")
         st.markdown("### 📊 各模型性能对比")
         st.markdown("**选择评价指标：**")
@@ -1335,6 +1007,7 @@ with tab4:
             }
             st.rerun()
         
+        # ===== 显示评价指标 =====
         if st.session_state.show_metrics and st.session_state.metrics_params:
             target = st.session_state.metrics_params.get('target')
             metric_type = st.session_state.metrics_params.get('metric')
@@ -1343,6 +1016,7 @@ with tab4:
                 model_keys = ['lr', 'lasso', 'rf', 'xgb']
                 model_names = ['Linear', 'Lasso', 'RF', 'XGBoost']
                 
+                # 收集所有模型的指标
                 metrics_data = {}
                 for m_key, m_name in zip(model_keys, model_names):
                     metrics_data[m_name] = {
@@ -1353,6 +1027,7 @@ with tab4:
                     }
                 
                 if metric_type == 'all':
+                    # 全部评价：完整表格
                     st.markdown("**📊 各模型评价指标对比：**")
                     df_metrics = pd.DataFrame(metrics_data).T
                     df_metrics.columns = ['R²', 'MSE', 'RMSE', 'MAE']
@@ -1362,6 +1037,7 @@ with tab4:
                     df_metrics['MAE'] = df_metrics['MAE'].map('{:.4f}'.format)
                     st.dataframe(df_metrics, use_container_width=True)
                     
+                    # 同时显示R²和RMSE柱状图
                     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
                     text_color = colors['plot_textcolor']
                     
@@ -1388,14 +1064,8 @@ with tab4:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    col_left, col_right = st.columns([6, 1])
-                    with col_right:
-                        if st.button("🗑️", key="clear_tab4_metrics_all", help="清理数据"):
-                            clear_session_data()
-                        buf = save_matplotlib_fig(fig, "metrics_comparison.png", dpi=150)
-                        download_button_light_yellow("📥 保存", buf, "metrics_comparison.png", key="save_metrics_all")
-                    
                 else:
+                    # 单个指标
                     metric_names = {'r2': 'R²', 'mse': 'MSE', 'rmse': 'RMSE', 'mae': 'MAE'}
                     values = [metrics_data[m][metric_type] for m in model_names]
                     
@@ -1406,6 +1076,7 @@ with tab4:
                     })
                     st.dataframe(df_single, use_container_width=True)
                     
+                    # 柱状图
                     fig, ax = plt.subplots(figsize=(8, 4))
                     text_color = colors['plot_textcolor']
                     bars = ax.bar(model_names, values, color=['#58a6ff', '#f0883e', '#3fb950', '#f85149'])
@@ -1419,13 +1090,7 @@ with tab4:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    col_left, col_right = st.columns([6, 1])
-                    with col_right:
-                        if st.button("🗑️", key="clear_tab4_metrics_single", help="清理数据"):
-                            clear_session_data()
-                        buf = save_matplotlib_fig(fig, f"{metric_names[metric_type]}_comparison.png", dpi=150)
-                        download_button_light_yellow("📥 保存", buf, f"{metric_names[metric_type]}_comparison.png", key="save_metrics_single")
-                    
+                    # 标记最优模型
                     if metric_type == 'r2':
                         best_idx = np.argmax(values)
                         best_model = model_names[best_idx]
@@ -1435,6 +1100,7 @@ with tab4:
                         best_model = model_names[best_idx]
                         st.success(f"✅ **{best_model}** 的 {metric_names[metric_type]} 最小 ({values[best_idx]:.4f})，表现最优！")
         
+        # ===== 小提琴图 =====
         st.markdown("---")
         st.markdown("### 🎻 小提琴图 - 数据分布")
         
@@ -1476,14 +1142,8 @@ with tab4:
                 fig.patch.set_facecolor(colors['plot_facecolor'])
                 plt.tight_layout()
                 st.pyplot(fig)
-                
-                col_left, col_right = st.columns([6, 1])
-                with col_right:
-                    if st.button("🗑️", key="clear_tab4_violin", help="清理数据"):
-                        clear_session_data()
-                    buf = save_matplotlib_fig(fig, f"{title}_violin.png", dpi=150)
-                    download_button_light_yellow("📥 保存", buf, f"{title}_violin.png", key="save_violin")
         
+        # ===== 箱线图 =====
         st.markdown("---")
         st.markdown("### 📦 Boxplot - Model Error Distribution Comparison")
         st.markdown("Compare error distributions of different models in F/M and SVI prediction")
@@ -1549,13 +1209,6 @@ with tab4:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    col_left, col_right = st.columns([6, 1])
-                    with col_right:
-                        if st.button("🗑️", key="clear_tab4_box", help="清理数据"):
-                            clear_session_data()
-                        buf = save_matplotlib_fig(fig, f"{metric_display}_boxplot.png", dpi=150)
-                        download_button_light_yellow("📥 保存", buf, f"{metric_display}_boxplot.png", key="save_box")
-                    
                     st.markdown("**📊 Model Error Statistics:**")
                     stats_data = []
                     for i, (name, errors_data) in enumerate(zip(valid_models, errors)):
@@ -1616,13 +1269,6 @@ with tab5:
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    col_left, col_right = st.columns([6, 1])
-                    with col_right:
-                        if st.button("🗑️", key="clear_tab5_1", help="清理数据"):
-                            clear_session_data()
-                        buf = save_matplotlib_fig(fig, "shap_summary.png", dpi=150)
-                        download_button_light_yellow("📥 保存", buf, "shap_summary.png", key="save_shap1")
-                    
                     st.markdown("#### 📊 SHAP 特征重要性")
                     fig2, ax2 = plt.subplots(figsize=(10, 5))
                     ax2.set_facecolor(colors['plot_facecolor'])
@@ -1637,13 +1283,6 @@ with tab5:
                         patch.set_color('#58a6ff' if st.session_state.theme == 'dark' else '#1a5276')
                     plt.tight_layout()
                     st.pyplot(fig2)
-                    
-                    col_left, col_right = st.columns([6, 1])
-                    with col_right:
-                        if st.button("🗑️", key="clear_tab5_2", help="清理数据"):
-                            clear_session_data()
-                        buf = save_matplotlib_fig(fig2, "shap_importance.png", dpi=150)
-                        download_button_light_yellow("📥 保存", buf, "shap_importance.png", key="save_shap2")
                     
                     st.markdown("---")
                     st.markdown("#### 🎯 当前输入的SHAP解释")
